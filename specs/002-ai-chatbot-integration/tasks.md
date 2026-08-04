@@ -20,9 +20,9 @@
 
 **Purpose**: Install the Anthropic SDK, provision the API key file, and define shared TypeScript types used by both the Route Handler and the client component.
 
-- [ ] T001 Add `@anthropic-ai/sdk` to `package.json` by running `npm install @anthropic-ai/sdk`
-- [ ] T002 [P] Create `.env.local` at the repository root with `ANTHROPIC_API_KEY=` placeholder (file is gitignored by Next.js default)
-- [ ] T003 [P] Create `lib/types/chat.ts` with the shared TypeScript types from `specs/002-ai-chatbot-integration/contracts/types.ts`: `MessageRole`, `Message`, `ConversationState`, `MessageParam`, `ChatRequestBody`, `ChatErrorType`, `ChatErrorResponse`, `ChatInterfaceProps`
+- [X] T001 Add `@anthropic-ai/sdk` to `package.json` by running `npm install @anthropic-ai/sdk`
+- [X] T002 [P] Create `.env.local` at the repository root with `ANTHROPIC_API_KEY=` placeholder (file is gitignored by Next.js default)
+- [X] T003 [P] Create `lib/types/chat.ts` with the shared TypeScript types from `specs/002-ai-chatbot-integration/contracts/types.ts`: `MessageRole`, `Message`, `ConversationState`, `MessageParam`, `ChatRequestBody`, `ChatErrorType`, `ChatErrorResponse`, `ChatInterfaceProps`
 
 ---
 
@@ -32,11 +32,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Create `app/api/chat/route.ts` with a named `POST` export and request body parsing — read `messages: MessageParam[]` from JSON body, validate array is non-empty
-- [ ] T005 Instantiate the Anthropic client with `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })` in `app/api/chat/route.ts`
-- [ ] T006 Add the static car-buying system prompt string constant in `app/api/chat/route.ts` (canonical text from `research.md` Decision 4)
-- [ ] T007 Implement the streaming `ReadableStream` response in `app/api/chat/route.ts` — call `client.messages.stream()` with `model: 'claude-sonnet-4-6'`, `system` prompt, `max_tokens`, and `messages`; enqueue each `content_block_delta` text chunk into a `ReadableStream`; return `new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } })`
-- [ ] T008 Add typed error handling in `app/api/chat/route.ts` — catch `Anthropic.RateLimitError` → 429 `rate_limit`, `Anthropic.APIConnectionError` → 503 `connection`, `Anthropic.APIStatusError` → 502 `api_error`, all others → 500 `unknown`; return `Response.json({ error: { type, message } }, { status })` per the contract in `contracts/api.md`
+- [X] T004 Create `app/api/chat/route.ts` with a named `POST` export and request body parsing — read `messages: MessageParam[]` from JSON body, validate array is non-empty
+- [X] T005 Instantiate the Anthropic client with `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })` in `app/api/chat/route.ts`
+- [X] T006 Add the static car-buying system prompt string constant in `app/api/chat/route.ts` (canonical text from `research.md` Decision 4)
+- [X] T007 Implement the streaming `ReadableStream` response in `app/api/chat/route.ts` — call `client.messages.stream()` with `model: 'claude-sonnet-4-6'`, `system` prompt, `max_tokens`, and `messages`; enqueue each `content_block_delta` text chunk into a `ReadableStream`; return `new Response(stream, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } })`
+- [X] T008 Add typed error handling in `app/api/chat/route.ts` — catch `Anthropic.RateLimitError` → 429 `rate_limit`, `Anthropic.APIConnectionError` → 503 `connection`, `Anthropic.APIStatusError` → 502 `api_error`, all others → 500 `unknown`; return `Response.json({ error: { type, message } }, { status })` per the contract in `contracts/api.md`
 
 **Checkpoint**: Route Handler complete — send a `curl -X POST http://localhost:3000/api/chat -d '{"messages":[{"role":"user","content":"test"}]}'` to confirm a streaming text response.
 
@@ -50,15 +50,15 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Add `'use client'` directive and import `useState`, `useRef`, `useEffect` from `react` in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T010 [P] [US1] Declare `ConversationState` via `useState<ConversationState>` initialised to `{ messages: [], isStreaming: false, streamingContent: '', error: null }` in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T011 [US1] Implement `sendMessage` handler in `components/ChatInterface/ChatInterface.tsx` (depends on T009, T010): create a `Message` with `id: crypto.randomUUID()`, append to `messages`, set `isStreaming: true`, POST to `/api/chat` with `{ messages: [{ role: 'user', content }] }`, read the `ReadableStream` body with `response.body.getReader()` + `TextDecoder`, accumulate decoded chunks into `streamingContent`, on stream close append completed assistant `Message` to `messages` and reset `streamingContent` and `isStreaming`
-- [ ] T012 [US1] Render the `messages` array in `components/ChatInterface/ChatInterface.tsx` — map each `Message` to a bubble element styled by `role`; render the in-progress `streamingContent` as a temporary assistant bubble while `isStreaming` is true
-- [ ] T013 [US1] Show a loading indicator in `components/ChatInterface/ChatInterface.tsx` from the moment `isStreaming` becomes `true` until the first character appears in `streamingContent`; once `streamingContent` is non-empty, replace the indicator with the live text
-- [ ] T014 [US1] Disable the message `<input>` and submit `<button>` when `isStreaming` is `true` in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T015 [US1] Add a `useEffect` that scrolls the chat container ref to `scrollHeight` whenever `messages` or `streamingContent` changes in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T016 [P] [US1] Add message bubble variant styles (`.userBubble`, `.assistantBubble`), loading indicator animation, and disabled-input styles to `components/ChatInterface/ChatInterface.module.css`
-- [ ] T017 [US1] Guard `sendMessage` to return early without making a request when the trimmed input value is empty (FR-007) in `components/ChatInterface/ChatInterface.tsx`
+- [X] T009 [P] [US1] Add `'use client'` directive and import `useState`, `useRef`, `useEffect` from `react` in `components/ChatInterface/ChatInterface.tsx`
+- [X] T010 [P] [US1] Declare `ConversationState` via `useState<ConversationState>` initialised to `{ messages: [], isStreaming: false, streamingContent: '', error: null }` in `components/ChatInterface/ChatInterface.tsx`
+- [X] T011 [US1] Implement `sendMessage` handler in `components/ChatInterface/ChatInterface.tsx` (depends on T009, T010): create a `Message` with `id: crypto.randomUUID()`, append to `messages`, set `isStreaming: true`, POST to `/api/chat` with `{ messages: [{ role: 'user', content }] }`, read the `ReadableStream` body with `response.body.getReader()` + `TextDecoder`, accumulate decoded chunks into `streamingContent`, on stream close append completed assistant `Message` to `messages` and reset `streamingContent` and `isStreaming`
+- [X] T012 [US1] Render the `messages` array in `components/ChatInterface/ChatInterface.tsx` — map each `Message` to a bubble element styled by `role`; render the in-progress `streamingContent` as a temporary assistant bubble while `isStreaming` is true
+- [X] T013 [US1] Show a loading indicator in `components/ChatInterface/ChatInterface.tsx` from the moment `isStreaming` becomes `true` until the first character appears in `streamingContent`; once `streamingContent` is non-empty, replace the indicator with the live text
+- [X] T014 [US1] Disable the message `<input>` and submit `<button>` when `isStreaming` is `true` in `components/ChatInterface/ChatInterface.tsx`
+- [X] T015 [US1] Add a `useEffect` that scrolls the chat container ref to `scrollHeight` whenever `messages` or `streamingContent` changes in `components/ChatInterface/ChatInterface.tsx`
+- [X] T016 [P] [US1] Add message bubble variant styles (`.userBubble`, `.assistantBubble`), loading indicator animation, and disabled-input styles to `components/ChatInterface/ChatInterface.module.css`
+- [X] T017 [US1] Guard `sendMessage` to return early without making a request when the trimmed input value is empty (FR-007) in `components/ChatInterface/ChatInterface.tsx`
 
 **Checkpoint**: User Story 1 independently functional — streaming response visible, input disabled during stream, auto-scroll working.
 
@@ -72,7 +72,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Update the POST body construction in `sendMessage` in `components/ChatInterface/ChatInterface.tsx`: replace the single-message array with `messages.slice(-20).map(({ role, content }) => ({ role, content }))` plus the new user message appended — this sends the pruned history (last 20 messages, `id` stripped) on every call (FR-003)
+- [X] T018 [US2] Update the POST body construction in `sendMessage` in `components/ChatInterface/ChatInterface.tsx`: replace the single-message array with `messages.slice(-20).map(({ role, content }) => ({ role, content }))` plus the new user message appended — this sends the pruned history (last 20 messages, `id` stripped) on every call (FR-003)
 
 **Checkpoint**: Multi-turn context working — "Is it good for families?" answered in the context of the Toyota Camry. User Stories 1 and 2 both pass their independent tests.
 
@@ -86,9 +86,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] After `fetch()` resolves in `sendMessage`, check `response.ok`; if false, read and parse the `ChatErrorResponse` JSON body and map `error.type` to user-visible strings: `rate_limit` → "Too many requests — please wait a moment and try again", `connection` → "Couldn't reach the AI service — check your connection and retry", `api_error` → "The AI service returned an error — please try again", `unknown` → "Something went wrong — please try again"; set `error` in state and reset `isStreaming` in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T020 [US3] Render the `error` string from state below the chat thread when non-null in `components/ChatInterface/ChatInterface.tsx`; clear `error` when the user submits a new message
-- [ ] T021 [P] [US3] Add error message display styles (`.errorMessage`) to `components/ChatInterface/ChatInterface.module.css`
+- [X] T019 [US3] After `fetch()` resolves in `sendMessage`, check `response.ok`; if false, read and parse the `ChatErrorResponse` JSON body and map `error.type` to user-visible strings: `rate_limit` → "Too many requests — please wait a moment and try again", `connection` → "Couldn't reach the AI service — check your connection and retry", `api_error` → "The AI service returned an error — please try again", `unknown` → "Something went wrong — please try again"; set `error` in state and reset `isStreaming` in `components/ChatInterface/ChatInterface.tsx`
+- [X] T020 [US3] Render the `error` string from state below the chat thread when non-null in `components/ChatInterface/ChatInterface.tsx`; clear `error` when the user submits a new message
+- [X] T021 [P] [US3] Add error message display styles (`.errorMessage`) to `components/ChatInterface/ChatInterface.module.css`
 
 **Checkpoint**: Error handling complete — specific rate-limit vs generic error messages shown; input re-enabled after error; retry succeeds without page reload.
 
@@ -102,11 +102,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T022 [P] [US4] Add `abortControllerRef = useRef<AbortController | null>(null)` to `components/ChatInterface/ChatInterface.tsx`; in a `useEffect` cleanup function call `abortControllerRef.current?.abort()` on component unmount
-- [ ] T023 [US4] Create a fresh `AbortController` (`new AbortController()`) at the start of `sendMessage`, assign it to `abortControllerRef.current`, and pass `signal: abortControllerRef.current.signal` to `fetch()` in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T024 [US4] Add a "New conversation" `<button>` to the ChatInterface UI in `components/ChatInterface/ChatInterface.tsx`
-- [ ] T025 [US4] Implement `startNewConversation` handler in `components/ChatInterface/ChatInterface.tsx`: call `abortControllerRef.current?.abort()`, then reset state to `{ messages: [], isStreaming: false, streamingContent: '', error: null }`; ensure the fetch rejection from abort is caught silently (do not set `error` state on abort)
-- [ ] T026 [P] [US4] Add "New conversation" button styles to `components/ChatInterface/ChatInterface.module.css`
+- [X] T022 [P] [US4] Add `abortControllerRef = useRef<AbortController | null>(null)` to `components/ChatInterface/ChatInterface.tsx`; in a `useEffect` cleanup function call `abortControllerRef.current?.abort()` on component unmount
+- [X] T023 [US4] Create a fresh `AbortController` (`new AbortController()`) at the start of `sendMessage`, assign it to `abortControllerRef.current`, and pass `signal: abortControllerRef.current.signal` to `fetch()` in `components/ChatInterface/ChatInterface.tsx`
+- [X] T024 [US4] Add a "New conversation" `<button>` to the ChatInterface UI in `components/ChatInterface/ChatInterface.tsx`
+- [X] T025 [US4] Implement `startNewConversation` handler in `components/ChatInterface/ChatInterface.tsx`: call `abortControllerRef.current?.abort()`, then reset state to `{ messages: [], isStreaming: false, streamingContent: '', error: null }`; ensure the fetch rejection from abort is caught silently (do not set `error` state on abort)
+- [X] T026 [P] [US4] Add "New conversation" button styles to `components/ChatInterface/ChatInterface.module.css`
 
 **Checkpoint**: New conversation fully functional — stream cancelled mid-flight, thread cleared, input re-enabled; no partial assistant message persists.
 
@@ -116,10 +116,10 @@
 
 **Purpose**: Final validation across all user stories — TypeScript correctness, responsive layout, and end-to-end manual verification.
 
-- [ ] T027 Run `npm run build` from the repository root and resolve any TypeScript errors or Next.js build errors in `app/api/chat/route.ts` and `components/ChatInterface/ChatInterface.tsx`
-- [ ] T028 [P] Verify zero `any` types exist in `app/api/chat/route.ts` and `components/ChatInterface/ChatInterface.tsx`; remove any introduced during implementation
-- [ ] T029 [P] Confirm responsive layout in `components/ChatInterface/ChatInterface.module.css` at 320px, 768px, and 1280px viewports; verify touch targets (input, send button, "New conversation" button) are ≥44×44px; confirm no horizontal overflow
-- [ ] T030 Run all validation scenarios in `specs/002-ai-chatbot-integration/quickstart.md` — SC-001 through SC-005 and all edge cases (empty message, off-topic redirect, new-conversation mid-stream, auto-scroll, rate-limit error message)
+- [X] T027 Run `npm run build` from the repository root and resolve any TypeScript errors or Next.js build errors in `app/api/chat/route.ts` and `components/ChatInterface/ChatInterface.tsx`
+- [X] T028 [P] Verify zero `any` types exist in `app/api/chat/route.ts` and `components/ChatInterface/ChatInterface.tsx`; remove any introduced during implementation
+- [X] T029 [P] Confirm responsive layout in `components/ChatInterface/ChatInterface.module.css` at 320px, 768px, and 1280px viewports; verify touch targets (input, send button, "New conversation" button) are ≥44×44px; confirm no horizontal overflow
+- [X] T030 Run all validation scenarios in `specs/002-ai-chatbot-integration/quickstart.md` — SC-001 through SC-005 and all edge cases (empty message, off-topic redirect, new-conversation mid-stream, auto-scroll, rate-limit error message)
 
 ---
 

@@ -1,0 +1,34 @@
+export type MessageRole = 'user' | 'assistant';
+
+export interface Message {
+  id: string;
+  role: MessageRole;
+  content: string;
+}
+
+export interface ConversationState {
+  messages: Message[];
+  isStreaming: boolean;
+  streamingContent: string;
+  error: string | null;
+}
+
+export interface MessageParam {
+  role: MessageRole;
+  content: string;
+}
+
+export interface ChatRequestBody {
+  messages: MessageParam[];
+}
+
+export type ChatErrorType = 'rate_limit' | 'connection' | 'api_error' | 'unknown';
+
+export interface ChatErrorResponse {
+  error: {
+    type: ChatErrorType;
+    message: string;
+  };
+}
+
+export type ChatInterfaceProps = Record<string, never>;
