@@ -16,7 +16,7 @@
 - Q: What is the primary UX interaction pattern for the AI car-buying assistant? → A: Chat / conversational interface
 - Q: Do existing brand assets exist to guide visual identity, or should it be created from scratch? → A: No assets — design from scratch with pragmatic defaults
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Open the Chat Interface (Priority: P1)
 
@@ -69,7 +69,7 @@ A user on any device — phone, tablet, or desktop — experiences a visually co
 - How does the layout behave when the browser's font size is set to extra-large (accessibility setting)?
 - What does the user see if JavaScript fails to load? (Expected: at minimum, page structure and content are visible without JS)
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -89,7 +89,7 @@ A user on any device — phone, tablet, or desktop — experiences a visually co
 - **Layout Shell**: The wrapper that applies the shared header to every page. Ensures visual consistency across routes.
 - **Chat Interface**: The primary UI component on the Home page. Contains a message display area and a message input. In this skeleton it is a structural placeholder — no AI integration is wired up.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

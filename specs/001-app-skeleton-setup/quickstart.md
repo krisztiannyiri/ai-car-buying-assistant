@@ -63,11 +63,11 @@ Expected: Next.js dev server starts at `http://localhost:3000`.
 
 Use browser DevTools device emulation or resize the window:
 
-| Viewport | Check |
-|----------|-------|
-| 320px | No horizontal scrollbar; chat input fully visible and reachable |
-| 768px | Layout reflows to take advantage of wider viewport; no overlap |
-| 1280px | Content centred/constrained; no overflow |
+| Viewport | Check                                                           |
+| -------- | --------------------------------------------------------------- |
+| 320px    | No horizontal scrollbar; chat input fully visible and reachable |
+| 768px    | Layout reflows to take advantage of wider viewport; no overlap  |
+| 1280px   | Content centred/constrained; no overflow                        |
 
 **Pass**: All three viewports render without horizontal scroll or overlapping elements.
 

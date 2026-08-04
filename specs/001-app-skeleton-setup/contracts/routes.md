@@ -13,6 +13,7 @@
 **Response**: `200 OK` — HTML document containing the Layout Shell (Header) and ChatInterface.
 
 **Viewport behaviour**:
+
 - 320–767px: single-column, full-width chat
 - 768–1279px: constrained width, centred
 - ≥1280px: constrained width (max ~800px), centred
@@ -28,6 +29,7 @@
 **Response**: `404 Not Found` — HTML document containing the Layout Shell (Header) and the 404 error content.
 
 **Required elements**:
+
 - Human-readable headline
 - Short description
 - Link back to `/`
@@ -38,7 +40,7 @@
 
 The following route patterns are **not** created by this feature and will return 404 until a subsequent feature introduces them:
 
-| Future path | Future feature |
-|-------------|---------------|
-| `/chat` or any assistant-specific sub-path | Assistant feature |
-| `/api/*` | Any backend integration feature |
+| Future path                                | Future feature                  |
+| ------------------------------------------ | ------------------------------- |
+| `/chat` or any assistant-specific sub-path | Assistant feature               |
+| `/api/*`                                   | Any backend integration feature |

@@ -13,6 +13,7 @@ Bootstrap a Next.js 16 / React 19 App Router project from scratch. The deliverab
 **Language/Version**: TypeScript (mandated by constitution — all source files `.ts`/`.tsx`, no `any` types)
 
 **Primary Dependencies**:
+
 - `next@16.3.0` — App Router, React Server Components, built-in CSS Modules, `not-found.tsx` convention
 - `react@19.2.8` + `react-dom@19.2.8`
 - `typescript`, `@types/node`, `@types/react`, `@types/react-dom` — dev dependencies
@@ -35,16 +36,16 @@ Bootstrap a Next.js 16 / React 19 App Router project from scratch. The deliverab
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-checked after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-checked after Phase 1 design._
 
-| Principle | Status | Notes |
-|-----------|--------|-------|
-| I. Clean Code | PASS | TypeScript enforces naming; Prettier config included; no dead code in a greenfield setup |
-| II. Simple UX | PASS | User lands directly on chat — zero intermediate steps |
-| III. Responsive Design | PASS | Breakpoints 320/768/1280px in spec; mobile-first CSS; touch targets ≥44×44px enforced via CSS |
-| IV. Minimal Dependencies | PASS | 3 runtime deps (next, react, react-dom); CSS Modules avoids any CSS-in-JS or utility-class library |
-| V. No Automated Testing | PASS | No `jest`/`vitest`/`playwright` or equivalent added; no `tests/` directory created |
-| Tech Stack | PASS | Next.js 16.3.0 + React 19.2.8 (latest stable at feature start); App Router only |
+| Principle                | Status | Notes                                                                                              |
+| ------------------------ | ------ | -------------------------------------------------------------------------------------------------- |
+| I. Clean Code            | PASS   | TypeScript enforces naming; Prettier config included; no dead code in a greenfield setup           |
+| II. Simple UX            | PASS   | User lands directly on chat — zero intermediate steps                                              |
+| III. Responsive Design   | PASS   | Breakpoints 320/768/1280px in spec; mobile-first CSS; touch targets ≥44×44px enforced via CSS      |
+| IV. Minimal Dependencies | PASS   | 3 runtime deps (next, react, react-dom); CSS Modules avoids any CSS-in-JS or utility-class library |
+| V. No Automated Testing  | PASS   | No `jest`/`vitest`/`playwright` or equivalent added; no `tests/` directory created                 |
+| Tech Stack               | PASS   | Next.js 16.3.0 + React 19.2.8 (latest stable at feature start); App Router only                    |
 
 No violations. Complexity Tracking table not required.
 

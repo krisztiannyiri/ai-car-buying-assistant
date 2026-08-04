@@ -20,9 +20,9 @@
 
 **Purpose**: Bootstrap the Next.js project from a blank repo.
 
-- [ ] T001 Scaffold Next.js 16.3.0 + React 19 project at repo root — run `npx create-next-app@16.3.0 . --typescript --app --no-src-dir --no-tailwind --no-eslint --import-alias "@/*"` to generate `package.json`, `tsconfig.json`, `next.config.ts`, and initial `app/` directory
-- [ ] T002 [P] Configure Prettier — create `prettier.config.js` (Constitution I) with `semi: true`, `singleQuote: true`, `trailingComma: 'es5'`, `printWidth: 100`; create `.prettierignore` excluding `.next/` and `node_modules/`
-- [ ] T003 [P] Remove default Next.js boilerplate — delete auto-generated `app/page.tsx`, `app/globals.css` placeholder, `app/layout.tsx` default, `public/*.svg` files; keep `public/` directory; the skeleton versions of these files are created in later phases
+- [x] T001 Scaffold Next.js 16.3.0 + React 19 project at repo root — run `npx create-next-app@16.3.0 . --typescript --app --no-src-dir --no-tailwind --no-eslint --import-alias "@/*"` to generate `package.json`, `tsconfig.json`, `next.config.ts`, and initial `app/` directory
+- [x] T002 [P] Configure Prettier — create `prettier.config.js` (Constitution I) with `semi: true`, `singleQuote: true`, `trailingComma: 'es5'`, `printWidth: 100`; create `.prettierignore` excluding `.next/` and `node_modules/`
+- [x] T003 [P] Remove default Next.js boilerplate — delete auto-generated `app/page.tsx`, `app/globals.css` placeholder, `app/layout.tsx` default, `public/*.svg` files; keep `public/` directory; the skeleton versions of these files are created in later phases
 
 **Checkpoint**: Repo has a valid Next.js 16 project that compiles (even if `app/page.tsx` is temporarily absent).
 
@@ -34,8 +34,8 @@
 
 **⚠️ CRITICAL**: Phases 3–5 all depend on this phase completing first.
 
-- [ ] T004 Create `app/globals.css` — define all 32 CSS custom properties from `research.md §Design Tokens` (8 colour tokens, 12 typography tokens, 8 spacing tokens, 4 radius tokens); add CSS reset (`*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }`); set base `html` and `body` styles using `--font-family`, `--font-size-base`, `--line-height-base`, `--color-bg`, `--color-text-primary`; add `overflow-x: hidden` on `html` to prevent horizontal scroll (FR-005)
-- [ ] T005 Create `app/layout.tsx` — bare root Server Component layout: `<html lang="en">`, `<body>` importing `globals.css`; include Next.js `metadata` export with `title` and `description`; render `{children}` only — Header is added in Phase 4 (T011); satisfies the Layout Shell entity from `data-model.md`
+- [x] T004 Create `app/globals.css` — define all 32 CSS custom properties from `research.md §Design Tokens` (8 colour tokens, 12 typography tokens, 8 spacing tokens, 4 radius tokens); add CSS reset (`*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }`); set base `html` and `body` styles using `--font-family`, `--font-size-base`, `--line-height-base`, `--color-bg`, `--color-text-primary`; add `overflow-x: hidden` on `html` to prevent horizontal scroll (FR-005)
+- [x] T005 Create `app/layout.tsx` — bare root Server Component layout: `<html lang="en">`, `<body>` importing `globals.css`; include Next.js `metadata` export with `title` and `description`; render `{children}` only — Header is added in Phase 4 (T011); satisfies the Layout Shell entity from `data-model.md`
 
 **Checkpoint**: `npm run dev` starts without errors; visiting `/` shows a blank page with correct base font and background colour from design tokens.
 
@@ -47,9 +47,9 @@
 
 **Independent Test**: Open `http://localhost:3000` — page loads, product name visible, `<textarea>` and send `<button>` present and reachable. See `quickstart.md §SC-001` and `§SC-002`.
 
-- [ ] T006 [P] [US1] Create `components/ChatInterface/ChatInterface.tsx` — Server Component; renders a `<section>` containing: (1) a scrollable message display area `<div>` with placeholder copy ("Your conversation will appear here"), (2) a message input row with a `<textarea placeholder="Ask me anything about buying a car…">` and a `<button type="button">Send</button>`; non-functional placeholder — no state, no handlers; satisfies FR-001 and Chat Interface entity in `data-model.md`
-- [ ] T007 [P] [US1] Create `components/ChatInterface/ChatInterface.module.css` — style the chat section using only design tokens; section fills available viewport height (`flex: 1`); message display area `flex-grows` and is scrollable (`overflow-y: auto`); input row is `display: flex`, `gap: var(--spacing-2)`; send button uses `--color-accent` background, `--color-text-primary` (white override), `--radius-md`, `min-height: 44px`, `min-width: 44px` (FR-006, Constitution III); textarea uses `--color-border` border, `--radius-md`, `--spacing-3` padding
-- [ ] T008 [US1] Create `app/page.tsx` — Server Component; exports `metadata` with `title: 'AI Car Buying Assistant'` and `description`; renders `<main className={styles.main}>` containing `<ChatInterface />`; create `app/page.module.css` for `main` layout (`display: flex`, `flex-direction: column`, `min-height: calc(100vh - <header-height>)`)
+- [x] T006 [P] [US1] Create `components/ChatInterface/ChatInterface.tsx` — Server Component; renders a `<section>` containing: (1) a scrollable message display area `<div>` with placeholder copy ("Your conversation will appear here"), (2) a message input row with a `<textarea placeholder="Ask me anything about buying a car…">` and a `<button type="button">Send</button>`; non-functional placeholder — no state, no handlers; satisfies FR-001 and Chat Interface entity in `data-model.md`
+- [x] T007 [P] [US1] Create `components/ChatInterface/ChatInterface.module.css` — style the chat section using only design tokens; section fills available viewport height (`flex: 1`); message display area `flex-grows` and is scrollable (`overflow-y: auto`); input row is `display: flex`, `gap: var(--spacing-2)`; send button uses `--color-accent` background, `--color-text-primary` (white override), `--radius-md`, `min-height: 44px`, `min-width: 44px` (FR-006, Constitution III); textarea uses `--color-border` border, `--radius-md`, `--spacing-3` padding
+- [x] T008 [US1] Create `app/page.tsx` — Server Component; exports `metadata` with `title: 'AI Car Buying Assistant'` and `description`; renders `<main className={styles.main}>` containing `<ChatInterface />`; create `app/page.module.css` for `main` layout (`display: flex`, `flex-direction: column`, `min-height: calc(100vh - <header-height>)`)
 
 **Checkpoint**: `http://localhost:3000` shows the chat interface. `SC-001` (< 2s load) and `SC-002` (purpose visible in 10s) pass.
 
@@ -61,10 +61,10 @@
 
 **Independent Test**: Visit `http://localhost:3000` and `http://localhost:3000/does-not-exist` — same header appears on both; clicking the app name from the 404 page navigates to `/`. See `quickstart.md §SC-003`.
 
-- [ ] T009 [P] [US2] Create `components/Header/Header.tsx` — `'use client'` directive required for `usePathname()`; renders a `<header>` containing a `<Link href="/">` wrapping the app name ("AI Car Buying Assistant") as an `<span>`; applies an active CSS class when `pathname === '/'` for FR-003; satisfies Header entity in `data-model.md` and FR-002, FR-003
-- [ ] T010 [P] [US2] Create `components/Header/Header.module.css` — header is `display: flex`, `align-items: center`, `padding: var(--spacing-4) var(--spacing-6)`, `border-bottom: 1px solid var(--color-border)`, `background: var(--color-bg)`; app name link uses `--color-text-primary`, `--font-weight-bold`, `--font-size-lg`, `text-decoration: none`; active state uses `--color-accent`; link `min-height: 44px` (FR-006)
-- [ ] T011 [US2] Update `app/layout.tsx` — import `Header` component and render it as the first child of `<body>` above `{children}`; wrap body content in a flex column so header + main fill the viewport height; satisfies FR-002
-- [ ] T012 [US2] Create `app/not-found.tsx` — Server Component; renders a centred page with: headline ("Page not found"), short description, and a `<Link href="/">` back to the chat interface; uses design tokens for styling (inline or a `.module.css`); satisfies FR-004
+- [x] T009 [P] [US2] Create `components/Header/Header.tsx` — `'use client'` directive required for `usePathname()`; renders a `<header>` containing a `<Link href="/">` wrapping the app name ("AI Car Buying Assistant") as an `<span>`; applies an active CSS class when `pathname === '/'` for FR-003; satisfies Header entity in `data-model.md` and FR-002, FR-003
+- [x] T010 [P] [US2] Create `components/Header/Header.module.css` — header is `display: flex`, `align-items: center`, `padding: var(--spacing-4) var(--spacing-6)`, `border-bottom: 1px solid var(--color-border)`, `background: var(--color-bg)`; app name link uses `--color-text-primary`, `--font-weight-bold`, `--font-size-lg`, `text-decoration: none`; active state uses `--color-accent`; link `min-height: 44px` (FR-006)
+- [x] T011 [US2] Update `app/layout.tsx` — import `Header` component and render it as the first child of `<body>` above `{children}`; wrap body content in a flex column so header + main fill the viewport height; satisfies FR-002
+- [x] T012 [US2] Create `app/not-found.tsx` — Server Component; renders a centred page with: headline ("Page not found"), short description, and a `<Link href="/">` back to the chat interface; uses design tokens for styling (inline or a `.module.css`); satisfies FR-004
 
 **Checkpoint**: Header visible on both Home and 404 pages. `SC-003` passes. 404 route returns correct content.
 
@@ -76,9 +76,9 @@
 
 **Independent Test**: Use DevTools to resize from 320px to 1280px+ on Home and 404 pages — no horizontal scrollbar at any width. See `quickstart.md §SC-004` and `§Edge case — Large browser font size`.
 
-- [ ] T013 [P] [US3] Update `components/ChatInterface/ChatInterface.module.css` — add mobile-first responsive rules: `width: 100%` at base (320px); at `min-width: 768px` apply `max-width: 720px; margin-inline: auto`; at `min-width: 1280px` apply `max-width: 800px`; ensure chat section fills viewport without horizontal overflow; FR-005
-- [ ] T014 [P] [US3] Update `components/Header/Header.module.css` — add responsive rules: at base (320px) header padding reduces to `var(--spacing-3) var(--spacing-4)`; app name truncates with `text-overflow: ellipsis` at narrow widths; ensures header never causes horizontal overflow; FR-005, FR-006
-- [ ] T015 [US3] Update `app/layout.tsx` and `app/page.module.css` — wrap page content in a `max-width` container that centres at wider viewports; verify `overflow-x: hidden` on body is sufficient; update `app/globals.css` if any base responsive styles were missed; ensures `SC-004` passes at all three breakpoints
+- [x] T013 [P] [US3] Update `components/ChatInterface/ChatInterface.module.css` — add mobile-first responsive rules: `width: 100%` at base (320px); at `min-width: 768px` apply `max-width: 720px; margin-inline: auto`; at `min-width: 1280px` apply `max-width: 800px`; ensure chat section fills viewport without horizontal overflow; FR-005
+- [x] T014 [P] [US3] Update `components/Header/Header.module.css` — add responsive rules: at base (320px) header padding reduces to `var(--spacing-3) var(--spacing-4)`; app name truncates with `text-overflow: ellipsis` at narrow widths; ensures header never causes horizontal overflow; FR-005, FR-006
+- [x] T015 [US3] Update `app/layout.tsx` and `app/page.module.css` — wrap page content in a `max-width` container that centres at wider viewports; verify `overflow-x: hidden` on body is sufficient; update `app/globals.css` if any base responsive styles were missed; ensures `SC-004` passes at all three breakpoints
 
 **Checkpoint**: Manual resize check at 320px, 768px, 1280px passes for both pages. `SC-004` verified.
 
@@ -88,9 +88,9 @@
 
 **Purpose**: Final quality checks across all user stories.
 
-- [ ] T016 Run `npm run build` — resolve any TypeScript compile errors; confirm zero `any` types (Constitution — `noImplicitAny: true`); confirm build output is clean with no warnings
-- [ ] T017 [P] Run `npx prettier --write .` — auto-format all source files; verify formatting is consistent across `app/` and `components/` (Constitution I)
-- [ ] T018 Manual validation per `specs/001-app-skeleton-setup/quickstart.md` — walk through all 7 scenarios: SC-001 (load time), SC-002 (10s comprehension), SC-003 (header on both pages), SC-004 (responsive check), SC-005 (no blank screens), edge case (large font size), edge case (no-JS)
+- [x] T016 Run `npm run build` — resolve any TypeScript compile errors; confirm zero `any` types (Constitution — `noImplicitAny: true`); confirm build output is clean with no warnings
+- [x] T017 [P] Run `npx prettier --write .` — auto-format all source files; verify formatting is consistent across `app/` and `components/` (Constitution I)
+- [x] T018 Manual validation per `specs/001-app-skeleton-setup/quickstart.md` — walk through all 7 scenarios: SC-001 (load time), SC-002 (10s comprehension), SC-003 (header on both pages), SC-004 (responsive check), SC-005 (no blank screens), edge case (large font size), edge case (no-JS)
 
 **Checkpoint**: All quickstart.md scenarios pass. Feature complete.
 
