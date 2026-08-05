@@ -6,11 +6,18 @@ export interface Message {
   content: string;
 }
 
+export type SessionStatus = 'active' | 'concluding' | 'concluded' | 'refining';
+
 export interface ConversationState {
   messages: Message[];
   isStreaming: boolean;
   streamingContent: string;
   error: string | null;
+  sessionStatus: SessionStatus;
+  roundCount: number;
+  consecutiveRefusals: number;
+  isRefinement: boolean;
+  webhookError: string | null;
 }
 
 export interface MessageParam {
@@ -20,6 +27,8 @@ export interface MessageParam {
 
 export interface ChatRequestBody {
   messages: MessageParam[];
+  isRefinement: boolean;
+  roundCount: number;
 }
 
 export type ChatErrorType = 'rate_limit' | 'connection' | 'api_error' | 'unknown';

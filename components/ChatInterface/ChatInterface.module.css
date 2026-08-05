@@ -114,6 +114,9 @@
 }
 
 .errorMessage {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
   color: #c0392b;
   font-size: var(--font-size-sm, 0.875rem);
   padding: var(--spacing-2) var(--spacing-3);
@@ -121,6 +124,42 @@
   border-radius: var(--radius-md);
   border: 1px solid #e74c3c;
   align-self: stretch;
+}
+
+.retryButton {
+  background: none;
+  border: 1px solid #c0392b;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-1, 4px) var(--spacing-2);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-family: var(--font-family);
+  color: #c0392b;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.retryButton:hover:not(:disabled) {
+  background-color: #c0392b;
+  color: #ffffff;
+}
+
+.retryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refiningBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-1, 4px) var(--spacing-2);
+  font-size: var(--font-size-sm, 0.875rem);
+  font-family: var(--font-family);
+  color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: var(--radius-md);
+  margin-right: auto;
 }
 
 .inputRow {
