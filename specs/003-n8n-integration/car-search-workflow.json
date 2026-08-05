@@ -1,0 +1,41 @@
+{
+  "name": "Car Search Logger",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "car-search",
+        "responseMode": "onReceived"
+      }
+    },
+    {
+      "id": "code-logger",
+      "name": "Log Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "const { query, messageCount, timestamp } = $input.first().json;\nconsole.log(`[car-search] query=\"${query}\" messageCount=${messageCount} at ${timestamp}`);\nreturn $input.all();"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Log Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

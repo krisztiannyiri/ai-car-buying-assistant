@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ChatErrorType } from '@/lib/types/chat';
+import { fireWebhook } from '@/lib/n8n/trigger';
+import type { WebhookPayload } from '@/lib/types/n8n';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -34,12 +36,27 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  const lastMessage = messages[messages.length - 1];
+  if (
+    process.env.N8N_WEBHOOK_CAR_SEARCH_URL &&
+    lastMessage?.role === 'user' &&
+    typeof lastMessage.content === 'string' &&
+    lastMessage.content.trim()
+  ) {
+    const payload: WebhookPayload = {
+      query: lastMessage.content.trim(),
+      messageCount: messages.length,
+      timestamp: new Date().toISOString(),
+    };
+    fireWebhook(process.env.N8N_WEBHOOK_CAR_SEARCH_URL, payload);
+  }
+
   try {
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         const messageStream = client.messages.stream({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-haiku-4-5',
           system: SYSTEM_PROMPT,
           max_tokens: 1024,
           messages,
