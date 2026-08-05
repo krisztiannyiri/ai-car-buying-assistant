@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import type { ConversationState, Message, MessageParam } from '@/lib/types/chat';
+import type { ConversationState, Message, MessageParam, SessionStatus } from '@/lib/types/chat';
 import type { ChatErrorResponse, ChatErrorType } from '@/lib/types/chat';
+import type { WebhookEvent, CarSearchPayload } from '@/lib/types/n8n';
 import styles from './ChatInterface.module.css';
 
 const ERROR_MESSAGES: Record<ChatErrorType, string> = {
@@ -12,17 +13,25 @@ const ERROR_MESSAGES: Record<ChatErrorType, string> = {
   unknown: 'Something went wrong — please try again',
 };
 
+const SENTINEL = '\n\n__WEBHOOK_EVENT__';
+
 export default function ChatInterface() {
   const [state, setState] = useState<ConversationState>({
     messages: [],
     isStreaming: false,
     streamingContent: '',
     error: null,
+    sessionStatus: 'active',
+    roundCount: 0,
+    consecutiveRefusals: 0,
+    isRefinement: false,
+    webhookError: null,
   });
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const retryPayloadRef = useRef<CarSearchPayload | null>(null);
 
   useEffect(() => {
     return () => {
@@ -47,8 +56,11 @@ export default function ChatInterface() {
       role: 'user',
       content: trimmed,
     };
-
     input.value = '';
+
+    // T012: Determine refinement mode transition
+    const goingIntoRefinement = state.sessionStatus === 'concluded';
+    const effectiveIsRefinement = state.isRefinement || goingIntoRefinement;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -59,6 +71,10 @@ export default function ChatInterface() {
       isStreaming: true,
       streamingContent: '',
       error: null,
+      webhookError: null,
+      ...(goingIntoRefinement
+        ? { sessionStatus: 'refining' as SessionStatus, isRefinement: true }
+        : {}),
     }));
 
     const apiMessages: MessageParam[] = [
@@ -69,18 +85,18 @@ export default function ChatInterface() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({
+          messages: apiMessages,
+          isRefinement: effectiveIsRefinement,
+          roundCount: state.roundCount,
+        }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorData: ChatErrorResponse = await response.json();
         const errorMessage = ERROR_MESSAGES[errorData.error.type] ?? ERROR_MESSAGES.unknown;
-        setState((prev) => ({
-          ...prev,
-          isStreaming: false,
-          error: errorMessage,
-        }));
+        setState((prev) => ({ ...prev, isStreaming: false, error: errorMessage }));
         return;
       }
 
@@ -93,25 +109,78 @@ export default function ChatInterface() {
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         accumulated += chunk;
-        setState((prev) => ({ ...prev, streamingContent: accumulated }));
+
+        // T008: Strip sentinel from live display so it never appears in chat
+        const sentinelIdx = accumulated.indexOf(SENTINEL);
+        const displayContent = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
+        setState((prev) => ({ ...prev, streamingContent: displayContent }));
       }
 
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: accumulated,
-      };
+      // T008: After stream closes, detect and parse sentinel
+      const sentinelIdx = accumulated.indexOf(SENTINEL);
 
-      setState((prev) => ({
-        ...prev,
-        messages: [...prev.messages, assistantMessage],
-        isStreaming: false,
-        streamingContent: '',
-      }));
+      if (sentinelIdx !== -1) {
+        const displayText = accumulated.slice(0, sentinelIdx);
+        const eventJson = accumulated.slice(sentinelIdx + SENTINEL.length);
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: displayText,
+        };
+
+        try {
+          const webhookEvent = JSON.parse(eventJson) as WebhookEvent;
+
+          if (webhookEvent.status === 'success') {
+            setState((prev) => ({
+              ...prev,
+              messages: [...prev.messages, assistantMessage],
+              isStreaming: false,
+              streamingContent: '',
+              sessionStatus: 'concluded',
+              webhookError: null,
+            }));
+          } else {
+            // T009: Store retry payload and surface error
+            if (webhookEvent.retryPayload) {
+              retryPayloadRef.current = webhookEvent.retryPayload;
+            }
+            setState((prev) => ({
+              ...prev,
+              messages: [...prev.messages, assistantMessage],
+              isStreaming: false,
+              streamingContent: '',
+              webhookError:
+                webhookEvent.errorMessage ?? 'The search could not be completed. Please try again.',
+            }));
+          }
+        } catch {
+          // Sentinel JSON parse failed — treat as normal message
+          setState((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
+            isStreaming: false,
+            streamingContent: '',
+            roundCount: prev.roundCount + 1,
+          }));
+        }
+      } else {
+        // T011: No sentinel — normal Q&A round, increment count
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: accumulated,
+        };
+        setState((prev) => ({
+          ...prev,
+          messages: [...prev.messages, assistantMessage],
+          isStreaming: false,
+          streamingContent: '',
+          roundCount: prev.roundCount + 1,
+        }));
+      }
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        return;
-      }
+      if (error instanceof Error && error.name === 'AbortError') return;
       setState((prev) => ({
         ...prev,
         isStreaming: false,
@@ -120,13 +189,57 @@ export default function ChatInterface() {
     }
   }
 
+  // T009: Retry the webhook with the stored payload
+  async function retryWebhook() {
+    const payload = retryPayloadRef.current;
+    if (!payload) return;
+
+    setState((prev) => ({ ...prev, webhookError: null, isStreaming: true }));
+
+    try {
+      const response = await fetch('/api/webhook-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        retryPayloadRef.current = null;
+        setState((prev) => ({
+          ...prev,
+          isStreaming: false,
+          sessionStatus: 'concluded',
+          webhookError: null,
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          isStreaming: false,
+          webhookError: 'Retry failed. Please try again.',
+        }));
+      }
+    } catch {
+      setState((prev) => ({
+        ...prev,
+        isStreaming: false,
+        webhookError: 'Retry failed. Please try again.',
+      }));
+    }
+  }
+
   function startNewConversation() {
     abortControllerRef.current?.abort();
+    retryPayloadRef.current = null;
     setState({
       messages: [],
       isStreaming: false,
       streamingContent: '',
       error: null,
+      sessionStatus: 'active',
+      roundCount: 0,
+      consecutiveRefusals: 0,
+      isRefinement: false,
+      webhookError: null,
     });
   }
 
@@ -142,6 +255,10 @@ export default function ChatInterface() {
   return (
     <section className={styles.section}>
       <div className={styles.toolbar}>
+        {/* T013: Refining badge */}
+        {state.sessionStatus === 'refining' && (
+          <span className={styles.refiningBadge}>Refining your search</span>
+        )}
         <button
           type="button"
           className={styles.newConversationButton}
@@ -177,6 +294,20 @@ export default function ChatInterface() {
           </div>
         )}
         {state.error && <p className={styles.errorMessage}>{state.error}</p>}
+        {/* T009: Webhook error with retry */}
+        {state.webhookError && (
+          <div className={styles.errorMessage}>
+            <span>{state.webhookError}</span>
+            <button
+              type="button"
+              className={styles.retryButton}
+              onClick={retryWebhook}
+              disabled={state.isStreaming}
+            >
+              Try again
+            </button>
+          </div>
+        )}
       </div>
 
       <div className={styles.inputRow}>
