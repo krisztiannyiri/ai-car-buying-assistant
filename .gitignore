@@ -24,11 +24,15 @@
 .DS_Store
 *.pem
 
+# claude code local settings (may contain secrets)
+.claude/settings.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+n8n-trigger.log
 
 # env files (can opt-in for committing if needed)
 .env*
