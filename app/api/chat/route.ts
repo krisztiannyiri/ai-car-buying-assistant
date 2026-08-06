@@ -239,12 +239,14 @@ export async function POST(request: Request): Promise<Response> {
   let messages: MessageParam[];
   let isRefinement: boolean;
   let roundCount: number;
+  let userEmail: string | null;
 
   try {
     const body = await request.json();
     messages = body.messages;
     isRefinement = typeof body.isRefinement === 'boolean' ? body.isRefinement : false;
     roundCount = typeof body.roundCount === 'number' ? body.roundCount : 0;
+    userEmail = typeof body.userEmail === 'string' ? body.userEmail : null;
     if (!Array.isArray(messages) || messages.length === 0) {
       return Response.json(
         {
@@ -319,6 +321,7 @@ export async function POST(request: Request): Promise<Response> {
                 annualMileage: toolInput.annualMileage,
                 endTrigger: toolInput.endTrigger,
                 isRefinement,
+                userEmail,
               };
               const result = await fireWebhookWithRetry(webhookUrl, payload);
               const webhookEvent: WebhookEvent = {

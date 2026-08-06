@@ -162,6 +162,39 @@
   margin-right: auto;
 }
 
+.emailRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-surface, #f5f5f5);
+}
+
+.emailLabel {
+  flex-shrink: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family);
+}
+
+.emailInput {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm, 0.875rem);
+  background-color: var(--color-background, #fff);
+  color: var(--color-text);
+  min-height: 36px;
+}
+
+.emailInput:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .inputRow {
   display: flex;
   gap: var(--spacing-2);

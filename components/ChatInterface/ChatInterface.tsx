@@ -27,6 +27,7 @@ export default function ChatInterface() {
     isRefinement: false,
     webhookError: null,
   });
+  const [userEmail, setUserEmail] = useState('');
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -89,6 +90,7 @@ export default function ChatInterface() {
           messages: apiMessages,
           isRefinement: effectiveIsRefinement,
           roundCount: state.roundCount,
+          userEmail: userEmail || null,
         }),
         signal: controller.signal,
       });
@@ -308,6 +310,20 @@ export default function ChatInterface() {
             </button>
           </div>
         )}
+      </div>
+
+      <div className={styles.emailRow}>
+        <label htmlFor="userEmail" className={styles.emailLabel}>
+          Get results by email (optional)
+        </label>
+        <input
+          id="userEmail"
+          type="email"
+          className={styles.emailInput}
+          placeholder="your@email.com"
+          value={userEmail}
+          onChange={(e) => setUserEmail(e.target.value)}
+        />
       </div>
 
       <div className={styles.inputRow}>
