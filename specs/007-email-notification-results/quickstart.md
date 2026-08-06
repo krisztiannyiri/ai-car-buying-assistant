@@ -5,14 +5,22 @@
 ## Prerequisites
 
 1. **n8n instance running** at `http://localhost:5678`
-2. **SMTP credential configured** in n8n:
+2. **Mailpit running** (local fake SMTP — catches emails without delivering them):
+   ```bash
+   docker run -d -p 1025:1025 -p 8025:8025 axllent/mailpit
+   ```
+   Sent emails appear at `http://localhost:8025`. No auth or TLS required.
+3. **SMTP credential configured** in n8n:
    - Go to n8n → Settings → Credentials → New → `SMTP`
-   - Name it `Car Buying Assistant SMTP`
-   - Fill in your SMTP host, port, username, and password
-   - Test the connection before proceeding
-3. **Car listings exist** in the `car_listings` data table (verify via n8n → Data → Tables)
-4. **Workflow published** — the updated "Car Search Logger" workflow must be active
-5. **Next.js app running** at `http://localhost:3000` (if testing the end-to-end UI flow)
+   - Name it exactly `Car Buying Assistant SMTP`
+   - Host: `localhost`, Port: `1025`
+   - Leave username/password blank, disable SSL/TLS
+   - Click "Test" — should show a green success indicator
+   - Attach the credential to the **"Send Results Email"** node in the workflow editor
+   - Publish the workflow
+4. **Car listings exist** in the `car_listings` data table (verify via n8n → Data → Tables)
+5. **Workflow published** — the updated "Car Search Logger" workflow must be active
+6. **Next.js app running** at `http://localhost:3000` (if testing the end-to-end UI flow)
 
 ## Scenario 1: Results exist → email sent (primary flow)
 
@@ -158,15 +166,15 @@
 
 **Steps**:
 
-1. Temporarily break the SMTP credential (e.g., change the password to something invalid in n8n Credentials).
+1. Temporarily break the SMTP credential — change the port to `1026` (Mailpit is not listening there) in n8n → Settings → Credentials → `Car Buying Assistant SMTP`.
 2. Send a valid request with a valid `userEmail` and criteria that match at least one car.
 3. **Expected workflow execution**:
-   - Send Results Email node fails (delivery error)
+   - Send Results Email node fails (connection refused)
    - "Continue on Fail" causes execution to continue
    - Record Email Warning node runs, stamps `emailWarning: true`
    - Execution status: **Success** (not failed)
 
-4. Restore the SMTP credential.
+4. Restore the port to `1025` in the credential.
 
 **Pass criteria**: Execution status is Success despite email failure; warning is present in output.
 
