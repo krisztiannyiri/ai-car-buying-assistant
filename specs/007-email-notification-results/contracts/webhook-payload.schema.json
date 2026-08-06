@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CarSearchWebhookPayload",
+  "description": "Payload sent from the Next.js chat API route to the n8n car-search webhook. Extended in feature 007 to include userEmail.",
+  "type": "object",
+  "required": [
+    "budgetMax",
+    "bodyTypes",
+    "fuelTypes",
+    "transmission",
+    "minSeats",
+    "features",
+    "yearMin",
+    "yearMax",
+    "engineDisplacements",
+    "usageContext",
+    "annualMileage",
+    "endTrigger",
+    "isRefinement"
+  ],
+  "properties": {
+    "budgetMax": {
+      "type": ["number", "null"],
+      "description": "Maximum budget in EUR. null if the user did not specify a budget."
+    },
+    "bodyTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Preferred vehicle body types. Use [\"any\"] when no preference was expressed."
+    },
+    "fuelTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Preferred fuel types. Use [\"any\"] when no preference was expressed."
+    },
+    "transmission": {
+      "type": "string",
+      "enum": ["manual", "automatic", "any"],
+      "description": "Preferred transmission type."
+    },
+    "minSeats": {
+      "type": ["number", "null"],
+      "description": "Minimum seat count required. null if not discussed."
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "mandatory"],
+        "properties": {
+          "name": { "type": "string", "description": "Feature name, e.g. 'heated seats'" },
+          "mandatory": { "type": "boolean", "description": "true = hard requirement; false = nice-to-have" }
+        }
+      },
+      "description": "Features the user mentioned. Empty array if none."
+    },
+    "yearMin": {
+      "type": ["number", "null"],
+      "description": "Minimum production year. null if not discussed."
+    },
+    "yearMax": {
+      "type": ["number", "null"],
+      "description": "Maximum production year. null if not discussed."
+    },
+    "engineDisplacements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Preferred engine displacement sizes. Use [\"any\"] when not discussed."
+    },
+    "usageContext": {
+      "type": "string",
+      "enum": ["commute", "family", "offroad", "performance", "any"],
+      "description": "Primary usage context inferred from the conversation."
+    },
+    "annualMileage": {
+      "type": ["string", "null"],
+      "description": "Estimated annual mileage band, e.g. '10000-15000'. null if not discussed."
+    },
+    "endTrigger": {
+      "type": "string",
+      "enum": ["explicit", "implicit", "length-limit", "refinement", "unknown"],
+      "description": "Reason the conversation concluded."
+    },
+    "isRefinement": {
+      "type": "boolean",
+      "description": "true if this is a follow-up refinement of a previous search."
+    },
+    "userEmail": {
+      "type": ["string", "null"],
+      "description": "NEW (feature 007): Email address to send matched car recommendations to. If absent, null, or malformed, the email step is skipped and a non-blocking warning is recorded. Must contain '@' and a domain with at least one '.'."
+    }
+  },
+  "examples": [
+    {
+      "budgetMax": 25000,
+      "bodyTypes": ["hatchback", "suv"],
+      "fuelTypes": ["hybrid", "petrol"],
+      "transmission": "automatic",
+      "minSeats": 5,
+      "features": [
+        { "name": "heated seats", "mandatory": false },
+        { "name": "parking sensors", "mandatory": true }
+      ],
+      "yearMin": 2019,
+      "yearMax": null,
+      "engineDisplacements": ["1.5", "2.0"],
+      "usageContext": "commute",
+      "annualMileage": "15000-20000",
+      "endTrigger": "explicit",
+      "isRefinement": false,
+      "userEmail": "user@example.com"
+    }
+  ]
+}

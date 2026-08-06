@@ -17,6 +17,7 @@ export interface CarSearchPayload {
   annualMileage: string | null;
   endTrigger: 'explicit' | 'implicit' | 'length-limit' | 'refinement' | 'unknown';
   isRefinement: boolean;
+  userEmail: string | null;
 }
 
 export interface WebhookEvent {
