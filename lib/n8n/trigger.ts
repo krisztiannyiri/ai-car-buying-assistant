@@ -1,6 +1,6 @@
 import { appendFile } from 'fs/promises';
 import { join } from 'path';
-import type { CarSearchPayload, TriggerLogEntry, WebhookResult } from '@/lib/types/n8n';
+import type { CarSearchPayload, TriggerLogEntry, WebhookResult, SearchResultItem } from '@/lib/types/n8n';
 
 function appendToLog(url: string, payload: CarSearchPayload, err: unknown): void {
   const entry: TriggerLogEntry = {
@@ -20,11 +20,20 @@ export async function fireWebhookWithRetry(url: string, payload: CarSearchPayloa
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      return { status: 'success' };
+      const body = (await response.json()) as {
+        results?: SearchResultItem[];
+        totalCount?: number;
+      };
+      return {
+        status: 'success',
+        results: Array.isArray(body.results) ? body.results : [],
+        totalCount: typeof body.totalCount === 'number' ? body.totalCount : 0,
+      };
     } catch (err) {
       lastError = err;
     }

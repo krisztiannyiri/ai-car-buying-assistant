@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { ConversationState, Message, MessageParam, SessionStatus } from '@/lib/types/chat';
 import type { ChatErrorResponse, ChatErrorType } from '@/lib/types/chat';
 import type { WebhookEvent, CarSearchPayload } from '@/lib/types/n8n';
+import SearchResultMessage from './SearchResultMessage';
 import styles from './ChatInterface.module.css';
 
 const ERROR_MESSAGES: Record<ChatErrorType, string> = {
@@ -14,6 +15,7 @@ const ERROR_MESSAGES: Record<ChatErrorType, string> = {
 };
 
 const SENTINEL = '\n\n__WEBHOOK_EVENT__';
+const SEARCH_STARTED_SENTINEL = '\n\n__SEARCH_STARTED__';
 
 export default function ChatInterface() {
   const [state, setState] = useState<ConversationState>({
@@ -26,6 +28,7 @@ export default function ChatInterface() {
     consecutiveRefusals: 0,
     isRefinement: false,
     webhookError: null,
+    isSearching: false,
   });
   const [userEmail, setUserEmail] = useState('');
 
@@ -79,7 +82,10 @@ export default function ChatInterface() {
     }));
 
     const apiMessages: MessageParam[] = [
-      ...[...state.messages, userMessage].slice(-20).map(({ role, content }) => ({ role, content })),
+      ...[...state.messages, userMessage]
+        .filter((msg) => !msg.searchResults)
+        .slice(-20)
+        .map(({ role, content }) => ({ role, content })),
     ];
 
     try {
@@ -112,17 +118,21 @@ export default function ChatInterface() {
         const chunk = decoder.decode(value, { stream: true });
         accumulated += chunk;
 
-        // T008: Strip sentinel from live display so it never appears in chat
-        const sentinelIdx = accumulated.indexOf(SENTINEL);
-        const displayContent = sentinelIdx !== -1 ? accumulated.slice(0, sentinelIdx) : accumulated;
-        setState((prev) => ({ ...prev, streamingContent: displayContent }));
+        const webhookIdx = accumulated.indexOf(SENTINEL);
+        const searchStartedIdx = accumulated.indexOf(SEARCH_STARTED_SENTINEL);
+        const markers = [webhookIdx, searchStartedIdx].filter((i) => i !== -1);
+        const firstMarker = markers.length > 0 ? Math.min(...markers) : -1;
+        const displayContent = firstMarker !== -1 ? accumulated.slice(0, firstMarker) : accumulated;
+        const isSearching = searchStartedIdx !== -1;
+        setState((prev) => ({ ...prev, streamingContent: displayContent, isSearching }));
       }
 
-      // T008: After stream closes, detect and parse sentinel
       const sentinelIdx = accumulated.indexOf(SENTINEL);
 
       if (sentinelIdx !== -1) {
-        const displayText = accumulated.slice(0, sentinelIdx);
+        const searchStartedIdx = accumulated.indexOf(SEARCH_STARTED_SENTINEL);
+        const firstMarker = [sentinelIdx, searchStartedIdx].filter((i) => i !== -1);
+        const displayText = accumulated.slice(0, Math.min(...firstMarker));
         const eventJson = accumulated.slice(sentinelIdx + SENTINEL.length);
         const assistantMessage: Message = {
           id: crypto.randomUUID(),
@@ -134,40 +144,66 @@ export default function ChatInterface() {
           const webhookEvent = JSON.parse(eventJson) as WebhookEvent;
 
           if (webhookEvent.status === 'success') {
+            const results = webhookEvent.results ?? [];
+            const totalCount = webhookEvent.totalCount ?? 0;
+            const extraMessages: Message[] = [];
+
+            if (results.length > 0) {
+              extraMessages.push({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: '',
+                searchResults: { items: results.slice(0, 5), totalCount },
+              });
+            } else {
+              extraMessages.push({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content:
+                  'No matching cars were found for your criteria. Try broadening your search — for example, consider a wider budget range or additional body types.',
+              });
+            }
+
             setState((prev) => ({
               ...prev,
-              messages: [...prev.messages, assistantMessage],
+              messages: [...prev.messages, assistantMessage, ...extraMessages],
               isStreaming: false,
               streamingContent: '',
               sessionStatus: 'concluded',
               webhookError: null,
+              isSearching: false,
             }));
           } else {
-            // T009: Store retry payload and surface error
             if (webhookEvent.retryPayload) {
               retryPayloadRef.current = webhookEvent.retryPayload;
             }
+            const errorMsg: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content:
+                'The search could not be completed. Please try again using the button below.',
+            };
             setState((prev) => ({
               ...prev,
-              messages: [...prev.messages, assistantMessage],
+              messages: [...prev.messages, assistantMessage, errorMsg],
               isStreaming: false,
               streamingContent: '',
               webhookError:
                 webhookEvent.errorMessage ?? 'The search could not be completed. Please try again.',
+              isSearching: false,
             }));
           }
         } catch {
-          // Sentinel JSON parse failed — treat as normal message
           setState((prev) => ({
             ...prev,
             messages: [...prev.messages, assistantMessage],
             isStreaming: false,
             streamingContent: '',
             roundCount: prev.roundCount + 1,
+            isSearching: false,
           }));
         }
       } else {
-        // T011: No sentinel — normal Q&A round, increment count
         const assistantMessage: Message = {
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -179,6 +215,7 @@ export default function ChatInterface() {
           isStreaming: false,
           streamingContent: '',
           roundCount: prev.roundCount + 1,
+          isSearching: false,
         }));
       }
     } catch (error) {
@@ -242,6 +279,7 @@ export default function ChatInterface() {
       consecutiveRefusals: 0,
       isRefinement: false,
       webhookError: null,
+      isSearching: false,
     });
   }
 
@@ -279,21 +317,41 @@ export default function ChatInterface() {
             key={msg.id}
             className={msg.role === 'user' ? styles.userBubble : styles.assistantBubble}
           >
-            {msg.content}
+            {msg.searchResults ? (
+              <SearchResultMessage
+                items={msg.searchResults.items}
+                totalCount={msg.searchResults.totalCount}
+                userEmail={userEmail || null}
+              />
+            ) : (
+              msg.content
+            )}
           </div>
         ))}
         {state.isStreaming && (
-          <div className={styles.assistantBubble}>
-            {state.streamingContent ? (
-              state.streamingContent
-            ) : (
-              <span className={styles.loadingIndicator}>
-                <span />
-                <span />
-                <span />
-              </span>
+          <>
+            {state.streamingContent && (
+              <div className={styles.assistantBubble}>{state.streamingContent}</div>
             )}
-          </div>
+            {state.isSearching ? (
+              <div className={styles.assistantBubble}>
+                {'Searching for matching cars… '}
+                <span className={styles.loadingIndicator}>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </div>
+            ) : !state.streamingContent ? (
+              <div className={styles.assistantBubble}>
+                <span className={styles.loadingIndicator}>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </div>
+            ) : null}
+          </>
         )}
         {state.error && <p className={styles.errorMessage}>{state.error}</p>}
         {/* T009: Webhook error with retry */}

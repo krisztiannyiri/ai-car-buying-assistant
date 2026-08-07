@@ -1,9 +1,12 @@
+import type { SearchResultItem } from '@/lib/types/n8n';
+
 export type MessageRole = 'user' | 'assistant';
 
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
+  searchResults?: { items: SearchResultItem[]; totalCount: number };
 }
 
 export type SessionStatus = 'active' | 'concluding' | 'concluded' | 'refining';
@@ -18,6 +21,7 @@ export interface ConversationState {
   consecutiveRefusals: number;
   isRefinement: boolean;
   webhookError: string | null;
+  isSearching: boolean;
 }
 
 export interface MessageParam {

@@ -3,6 +3,15 @@ export interface FeatureEntry {
   mandatory: boolean;
 }
 
+export interface SearchResultItem {
+  make: string;
+  model: string;
+  bodyType: string | null;
+  year: number;
+  price: number | null;
+  sourceUrl: string | null;
+}
+
 export interface CarSearchPayload {
   budgetMax: number | null;
   bodyTypes: string[];
@@ -25,6 +34,8 @@ export interface WebhookEvent {
   endTrigger: CarSearchPayload['endTrigger'];
   errorMessage?: string;
   retryPayload?: CarSearchPayload;
+  results?: SearchResultItem[];
+  totalCount?: number;
 }
 
 export interface TriggerLogEntry {
@@ -37,4 +48,6 @@ export interface TriggerLogEntry {
 export interface WebhookResult {
   status: 'success' | 'failed';
   errorMessage?: string;
+  results?: SearchResultItem[];
+  totalCount?: number;
 }
