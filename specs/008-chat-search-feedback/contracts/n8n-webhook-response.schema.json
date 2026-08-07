@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "N8nCarSearchWebhookResponse",
+  "description": "JSON body returned by the n8n car-search workflow in its HTTP response to the Next.js server. Requires the n8n Webhook node to use responseMode: responseNode and a terminal Respond to Webhook node.",
+  "type": "object",
+  "required": ["status", "results", "totalCount"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success"],
+      "description": "Always 'success' when the workflow reaches the Respond to Webhook node. Failure is indicated by a non-2xx HTTP status code."
+    },
+    "results": {
+      "type": "array",
+      "description": "All matched CarListing records (up to the workflow's internal query limit). The Next.js server caps display at 5 items. Empty array means no matches.",
+      "items": {
+        "type": "object",
+        "required": ["make", "model", "year"],
+        "properties": {
+          "make": {
+            "type": "string",
+            "description": "Vehicle manufacturer (e.g., Toyota, BMW)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model name (e.g., Corolla, 3 Series)"
+          },
+          "bodyType": {
+            "type": ["string", "null"],
+            "description": "Body type (e.g., hatchback, suv). null if not present in the record."
+          },
+          "year": {
+            "type": "number",
+            "description": "Production year (e.g., 2022)"
+          },
+          "price": {
+            "type": ["number", "null"],
+            "description": "Asking price in EUR. null if not present in the record."
+          },
+          "sourceUrl": {
+            "type": ["string", "null"],
+            "description": "Source listing URL. Derived from the CarListing 'source' field. null if the source field is not a valid URL."
+          }
+        }
+      }
+    },
+    "totalCount": {
+      "type": "number",
+      "description": "Total number of matched records in the database (may exceed the results array length if the workflow applies its own internal limit)."
+    }
+  },
+  "examples": [
+    {
+      "status": "success",
+      "results": [
+        {
+          "make": "Toyota",
+          "model": "Corolla",
+          "bodyType": "hatchback",
+          "year": 2022,
+          "price": 24900,
+          "sourceUrl": "https://example-dealer.com/listing/12345"
+        },
+        {
+          "make": "Honda",
+          "model": "Civic",
+          "bodyType": "saloon",
+          "year": 2021,
+          "price": null,
+          "sourceUrl": null
+        }
+      ],
+      "totalCount": 2
+    },
+    {
+      "status": "success",
+      "results": [],
+      "totalCount": 0
+    }
+  ]
+}

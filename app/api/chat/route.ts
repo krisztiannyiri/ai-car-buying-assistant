@@ -323,13 +323,14 @@ export async function POST(request: Request): Promise<Response> {
                 isRefinement,
                 userEmail,
               };
+              controller.enqueue(encoder.encode('\n\n__SEARCH_STARTED__'));
               const result = await fireWebhookWithRetry(webhookUrl, payload);
               const webhookEvent: WebhookEvent = {
                 status: result.status,
                 endTrigger: payload.endTrigger,
                 ...(result.status === 'failed'
                   ? { errorMessage: result.errorMessage, retryPayload: payload }
-                  : {}),
+                  : { results: result.results ?? [], totalCount: result.totalCount ?? 0 }),
               };
               controller.enqueue(
                 encoder.encode('\n\n__WEBHOOK_EVENT__' + JSON.stringify(webhookEvent))

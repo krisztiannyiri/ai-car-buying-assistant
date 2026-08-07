@@ -246,3 +246,70 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.resultList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1, 4px);
+  width: 100%;
+  white-space: normal;
+}
+
+.resultRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: baseline;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.resultRow:last-of-type {
+  border-bottom: none;
+}
+
+.resultTitle {
+  flex: 1 1 100%;
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+@media (min-width: 480px) {
+  .resultTitle {
+    flex: 1 1 auto;
+  }
+}
+
+.resultPrice {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.resultLink {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-accent);
+  text-decoration: underline;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.resultLink:hover {
+  color: var(--color-accent-hover);
+}
+
+.resultLinkUnavailable {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.resultOverflow {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+  padding-top: var(--spacing-1, 4px);
+}
