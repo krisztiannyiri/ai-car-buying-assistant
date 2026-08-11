@@ -1,14 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ChatErrorType } from '@/lib/types/chat';
 import type { CarSearchPayload, WebhookEvent } from '@/lib/types/n8n';
-import { fireWebhookWithRetry } from '@/lib/n8n/trigger';
+import { callSearchCars } from '@/lib/mcp/client';
+import { isErrorEnvelope } from '@/lib/types/mcp';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const ROUND_LIMIT = 5;
 const MAX_EXTENSIONS = 3;
 
-interface ConcludeConversationInput {
+interface SearchCarsInput {
   budgetMax: number | null;
   bodyTypes: string[];
   fuelTypes: string[];
@@ -27,7 +28,7 @@ function buildSystemPrompt(isRefinement: boolean, roundCount: number): string {
   const extensionCount = Math.floor(roundCount / ROUND_LIMIT);
 
   const refinementContext = isRefinement
-    ? `This is a REFINEMENT session — the user has already completed a search and wants to adjust their criteria. Review the conversation history to understand their original needs, acknowledge the amendment(s) they want to make, ask if anything else needs changing, then call \`conclude_conversation\` with the fully updated payload derived from your expert judgement. Use \`endTrigger: "refinement"\`.`
+    ? `This is a REFINEMENT session — the user has already completed a search and wants to adjust their criteria. Review the conversation history to understand their original needs, acknowledge the amendment(s) they want to make, ask if anything else needs changing, then call \`search_cars\` with the fully updated payload derived from your expert judgement. Use \`endTrigger: "refinement"\`.`
     : `This is a fresh conversation. Begin by understanding the user's lifestyle and usage needs from scratch.`;
 
   return `You are an expert car buying advisor. Your role is to understand the user's real-world needs and lifestyle, then recommend the most suitable vehicle based on your automotive expertise. You never ask users to specify technical car details — you determine those yourself.
@@ -51,14 +52,14 @@ If the user responds with "I don't know", "skip", "doesn't matter", "no preferen
 - Move immediately to the NEXT unanswered lifestyle question.
 - NEVER end the conversation because of refusals — any number of consecutive "I don't know" answers simply skips those topics and continues questioning.
 
-## When to call conclude_conversation
-Call the \`conclude_conversation\` tool ONLY when:
+## When to call search_cars
+Call the \`search_cars\` tool ONLY when:
 1. Explicit end: The user says something like "I'm done", "find me cars", "search now", "that's all", "let's go", "stop asking", "go ahead and search".
 2. Implicit end: The user's message clearly signals they are ready to search (e.g. "I think you have enough", "sounds good, search away").
 3. Round-limit decline: You have presented suggestions at a check-in AND the user declined to continue questioning.
 4. Soft ceiling reached: You have reached the maximum accepted extension limit and must conclude regardless.
 
-NEVER call conclude_conversation due to refusals alone.
+NEVER call search_cars due to refusals alone.
 
 ## Expert recommendation
 Once you have gathered sufficient lifestyle information (at minimum: daily driving distance, charging availability, passenger count, and budget), proactively present a named vehicle recommendation — do not wait for the user to ask.
@@ -95,9 +96,9 @@ After every ${ROUND_LIMIT} completed question-answer pairs, pause and:
 1. Based on the lifestyle constraints collected so far, name 2–3 specific vehicle categories or model families that fit, with a one-sentence reason for each tied to what the user told you.
 2. Ask: "Would you like me to search with these as my starting point, or shall we go through a few more questions to sharpen the recommendation?"
 
-- If the user wants to search → call \`conclude_conversation\` with \`endTrigger: "length-limit"\`.
+- If the user wants to search → call \`search_cars\` with \`endTrigger: "length-limit"\`.
 - If the user wants to continue → resume lifestyle questioning and repeat this check-in after the next ${ROUND_LIMIT}-round interval.
-- After ${MAX_EXTENSIONS} accepted continuations, deliver: "We've had a very thorough conversation — I have a strong picture of what you need. Let me run the search now." Then call \`conclude_conversation\` with \`endTrigger: "length-limit"\` regardless of user preference.
+- After ${MAX_EXTENSIONS} accepted continuations, deliver: "We've had a very thorough conversation — I have a strong picture of what you need. Let me run the search now." Then call \`search_cars\` with \`endTrigger: "length-limit"\` regardless of user preference.
 
 Current session context:
 - Completed rounds: ${roundCount}
@@ -106,8 +107,8 @@ Current session context:
 ## Session mode
 ${refinementContext}
 
-## Inference rules when calling conclude_conversation
-Fill EVERY field in \`conclude_conversation\` using your automotive expertise. Never ask the user for these values. Derive them from the lifestyle information collected.
+## Inference rules when calling search_cars
+Fill EVERY field in \`search_cars\` using your automotive expertise. Never ask the user for these values. Derive them from the lifestyle information collected.
 
 ### fuelTypes
 - No home or work charging available → ["petrol"] for low mileage; ["petrol", "hybrid"] for high mileage or city driving; exclude full EV
@@ -149,10 +150,10 @@ Fill EVERY field in \`conclude_conversation\` using your automotive expertise. N
 Only engage with car-related topics. Politely redirect unrelated questions.`;
 }
 
-const concludeConversationTool: Anthropic.Tool = {
-  name: 'conclude_conversation',
+const searchCarsTool: Anthropic.Tool = {
+  name: 'search_cars',
   description:
-    'Call this tool when the car-buying conversation is complete and the user\'s requirements are understood. This fires the search webhook. Do not call it mid-conversation. Populate every field; use "any" or [] for fields never discussed.',
+    'Search the vehicle database using structured filters derived from the user\'s conversation. All fields are optional; omitting all fields returns all available vehicles. Call this tool when the conversation is complete and you have gathered sufficient lifestyle information to construct a meaningful search.',
   input_schema: {
     type: 'object',
     required: [
@@ -271,7 +272,6 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const systemPrompt = buildSystemPrompt(isRefinement, roundCount);
-  const webhookUrl = process.env.N8N_WEBHOOK_CAR_SEARCH_URL;
 
   try {
     const stream = new ReadableStream({
@@ -282,7 +282,7 @@ export async function POST(request: Request): Promise<Response> {
           system: systemPrompt,
           max_tokens: 1500,
           messages,
-          tools: [concludeConversationTool],
+          tools: [searchCarsTool],
           tool_choice: { type: 'auto' },
         });
 
@@ -305,33 +305,28 @@ export async function POST(request: Request): Promise<Response> {
             }
           } else if (event.type === 'content_block_stop' && toolUseActive) {
             toolUseActive = false;
-            if (toolUseName === 'conclude_conversation' && webhookUrl) {
-              const toolInput = JSON.parse(toolUseInputJson) as ConcludeConversationInput;
-              const payload: CarSearchPayload = {
-                budgetMax: toolInput.budgetMax,
-                bodyTypes: toolInput.bodyTypes,
-                fuelTypes: toolInput.fuelTypes,
-                transmission: toolInput.transmission,
-                minSeats: toolInput.minSeats,
-                features: toolInput.features,
-                yearMin: toolInput.yearMin,
-                yearMax: toolInput.yearMax,
-                engineDisplacements: toolInput.engineDisplacements,
-                usageContext: toolInput.usageContext,
-                annualMileage: toolInput.annualMileage,
-                endTrigger: toolInput.endTrigger,
+            if (toolUseName === 'search_cars') {
+              const toolInput = JSON.parse(toolUseInputJson) as SearchCarsInput;
+              const retryPayload: CarSearchPayload = {
+                ...toolInput,
                 isRefinement,
                 userEmail,
               };
               controller.enqueue(encoder.encode('\n\n__SEARCH_STARTED__'));
-              const result = await fireWebhookWithRetry(webhookUrl, payload);
-              const webhookEvent: WebhookEvent = {
-                status: result.status,
-                endTrigger: payload.endTrigger,
-                ...(result.status === 'failed'
-                  ? { errorMessage: result.errorMessage, retryPayload: payload }
-                  : { results: result.results ?? [], totalCount: result.totalCount ?? 0 }),
-              };
+              const mcpResult = await callSearchCars({ ...toolInput, isRefinement, userEmail });
+              const webhookEvent: WebhookEvent = isErrorEnvelope(mcpResult)
+                ? {
+                    status: 'failed',
+                    endTrigger: toolInput.endTrigger,
+                    errorMessage: mcpResult.message,
+                    retryPayload,
+                  }
+                : {
+                    status: 'success',
+                    endTrigger: toolInput.endTrigger,
+                    results: mcpResult.results,
+                    totalCount: mcpResult.totalCount,
+                  };
               controller.enqueue(
                 encoder.encode('\n\n__WEBHOOK_EVENT__' + JSON.stringify(webhookEvent))
               );
