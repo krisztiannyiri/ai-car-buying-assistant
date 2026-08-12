@@ -34,7 +34,7 @@ const inputSchema = {
   bodyTypes: z
     .array(z.string())
     .optional()
-    .describe('e.g. ["suv", "hatchback"] or [] for no constraint'),
+    .describe('e.g. ["suv", "hatchback"] or ["any"] for no constraint'),
   fuelTypes: z.array(z.string()).optional().describe('e.g. ["electric"] or ["any"]'),
   transmission: z.enum(['manual', 'automatic', 'any']),
   minSeats: z.number().nullable().optional().describe('Minimum number of seats, or null'),
@@ -186,14 +186,14 @@ export async function executeSearchCars(
 
   const payload: CarSearchPayload = {
     budgetMax: input.budgetMax ?? null,
-    bodyTypes: input.bodyTypes ?? [],
-    fuelTypes: input.fuelTypes ?? [],
+    bodyTypes: input.bodyTypes?.length ? input.bodyTypes : ['any'],
+    fuelTypes: input.fuelTypes?.length ? input.fuelTypes : ['any'],
     transmission: input.transmission,
     minSeats: input.minSeats ?? null,
     features: input.features ?? [],
     yearMin: input.yearMin ?? null,
     yearMax: input.yearMax ?? null,
-    engineDisplacements: input.engineDisplacements ?? [],
+    engineDisplacements: input.engineDisplacements?.length ? input.engineDisplacements : ['any'],
     usageContext: input.usageContext,
     annualMileage: input.annualMileage ?? null,
     endTrigger: input.endTrigger,
