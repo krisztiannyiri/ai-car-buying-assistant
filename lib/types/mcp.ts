@@ -8,6 +8,12 @@ export interface VehicleResult {
   year: number;
   price: number | null;
   sourceUrl: string | null;
+  fuelType: string[] | null;
+  mileage: string | null;
+  transmission: string | null;
+  seatCount: number | null;
+  features: string[];
+  imageUrl: string | null;
 }
 
 export interface NormalizedResponse {
@@ -36,5 +42,11 @@ export function normalizeSearchResultItem(item: SearchResultItem): VehicleResult
     year: item.year,
     price: item.price,
     sourceUrl: item.sourceUrl,
+    mileage: item.mileage,
+    features: item.features,
+    fuelType: item.fuelType,
+    seatCount: item.seatCount,
+    transmission: item.transmission,
+    imageUrl: item.imageUrl,
   };
 }

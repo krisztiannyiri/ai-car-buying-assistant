@@ -10,6 +10,12 @@ export interface SearchResultItem {
   year: number;
   price: number | null;
   sourceUrl: string | null;
+  imageUrl: string | null;
+  fuelType: string[] | null;
+  mileage: string | null;
+  transmission: string | null;
+  seatCount: number | null;
+  features: string[];
 }
 
 export interface CarSearchPayload {
