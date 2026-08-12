@@ -767,7 +767,7 @@ function Results({
       {overflowCount > 0 && (
         <p className="pt-2 text-center text-[11px] leading-5 text-[#8a9288]">
           {overflowCount} more {overflowCount === 1 ? 'match' : 'matches'} found
-          {userEmail ? ` — check ${userEmail} for the full list` : ' - provide email address to access the full list'}.
+          {userEmail ? ` — check ${userEmail} for the full list` : ' - provide an email address to access the full list'}.
         </p>
       )}
     </div>

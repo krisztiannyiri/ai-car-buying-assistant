@@ -1,25 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, ChatErrorType, WizardAnswers } from '@/lib/types/chat';
 import type { CarSearchPayload, WebhookEvent } from '@/lib/types/n8n';
-import { callSearchCars } from '@/lib/mcp/client';
+import { callSearchCars, fetchMcpToolSchemas } from '@/lib/mcp/client';
 import { isErrorEnvelope } from '@/lib/types/mcp';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-interface SearchCarsInput {
-  budgetMax: number | null;
-  bodyTypes: string[];
-  fuelTypes: string[];
-  transmission: 'manual' | 'automatic' | 'any';
-  minSeats: number | null;
-  features: Array<{ name: string; mandatory: boolean }>;
-  yearMin: number | null;
-  yearMax: number | null;
-  engineDisplacements: string[];
-  usageContext: 'commute' | 'family' | 'offroad' | 'performance' | 'any';
-  annualMileage: string | null;
-  endTrigger: CarSearchPayload['endTrigger'];
-}
 
 function buildSystemPrompt(isRefinement: boolean, wizardAnswers?: WizardAnswers): string {
   const base = `You are a car buying advisor. Only engage with car-related topics — politely redirect anything unrelated.`;
@@ -61,91 +47,6 @@ The user has seen results and wants to adjust. Write one short sentence confirmi
   return `${base} Write one short sentence confirming what you are searching for (e.g. "Searching for all hybrids."), then call \`search_cars\` immediately using only the parameters the user mentioned. Leave everything else as null or "any". Never ask for additional details.`;
 }
 
-const searchCarsTool: Anthropic.Tool = {
-  name: 'search_cars',
-  description:
-    "Search the vehicle database using structured filters derived from the user's conversation. All fields are optional; omitting all fields returns all available vehicles. Call this tool when the conversation is complete and you have gathered sufficient lifestyle information to construct a meaningful search.",
-  input_schema: {
-    type: 'object',
-    required: [
-      'budgetMax',
-      'bodyTypes',
-      'fuelTypes',
-      'transmission',
-      'minSeats',
-      'features',
-      'yearMin',
-      'yearMax',
-      'engineDisplacements',
-      'usageContext',
-      'annualMileage',
-      'endTrigger',
-    ],
-    properties: {
-      budgetMax: {
-        type: ['number', 'null'],
-        description: 'Maximum budget in euros, or null if not discussed',
-      },
-      bodyTypes: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Preferred body types e.g. ["suv", "hatchback"] or ["any"]',
-      },
-      fuelTypes: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Preferred fuel types e.g. ["electric"] or ["any"]',
-      },
-      transmission: { type: 'string', enum: ['manual', 'automatic', 'any'] },
-      minSeats: {
-        type: ['number', 'null'],
-        description: 'Minimum number of seats required, or null',
-      },
-      features: {
-        type: 'array',
-        items: {
-          type: 'object',
-          required: ['name', 'mandatory'],
-          properties: {
-            name: { type: 'string' },
-            mandatory: {
-              type: 'boolean',
-              description: 'true = hard requirement, false = nice-to-have',
-            },
-          },
-        },
-        description: 'List of specific features the user mentioned; empty array if none',
-      },
-      yearMin: {
-        type: ['number', 'null'],
-        description: 'Minimum production year e.g. 2018, or null if not discussed',
-      },
-      yearMax: {
-        type: ['number', 'null'],
-        description: 'Maximum production year e.g. 2023, or null if not discussed',
-      },
-      engineDisplacements: {
-        type: 'array',
-        items: { type: 'string' },
-        description:
-          'Preferred engine displacements e.g. ["1.4", "2.0"] or ["any"] if not discussed',
-      },
-      usageContext: {
-        type: 'string',
-        enum: ['commute', 'family', 'offroad', 'performance', 'any'],
-      },
-      annualMileage: {
-        type: ['string', 'null'],
-        description: "Approximate mileage band e.g. '10000-15000' or null",
-      },
-      endTrigger: {
-        type: 'string',
-        enum: ['explicit', 'implicit', 'length-limit', 'refinement', 'unknown'],
-        description: 'Why the conversation is concluding',
-      },
-    },
-  },
-};
 
 export async function POST(request: Request): Promise<Response> {
   let messages: MessageParam[];
@@ -185,6 +86,7 @@ export async function POST(request: Request): Promise<Response> {
   const systemPrompt = buildSystemPrompt(isRefinement, wizardAnswers);
 
   try {
+    const tools = await fetchMcpToolSchemas();
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -193,7 +95,7 @@ export async function POST(request: Request): Promise<Response> {
           system: systemPrompt,
           max_tokens: 1500,
           messages,
-          tools: [searchCarsTool],
+          tools,
           tool_choice: { type: 'auto' },
         });
 
@@ -217,7 +119,7 @@ export async function POST(request: Request): Promise<Response> {
           } else if (event.type === 'content_block_stop' && toolUseActive) {
             toolUseActive = false;
             if (toolUseName === 'search_cars') {
-              const toolInput = JSON.parse(toolUseInputJson) as SearchCarsInput;
+              const toolInput = JSON.parse(toolUseInputJson) as Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
               const retryPayload: CarSearchPayload = {
                 ...toolInput,
                 isRefinement,
@@ -260,7 +162,7 @@ export async function POST(request: Request): Promise<Response> {
       status = 429;
       type = 'rate_limit';
       message = 'Too many requests — please wait a moment and try again';
-    } else if (error instanceof Anthropic.APIConnectionError) {
+    } else if (error instanceof Anthropic.APIConnectionError || error instanceof TypeError) {
       status = 503;
       type = 'connection';
       message = "Couldn't reach the AI service — check your connection and retry";
@@ -269,9 +171,9 @@ export async function POST(request: Request): Promise<Response> {
       type = 'api_error';
       message = 'The AI service returned an error — please try again';
     } else {
-      status = 500;
-      type = 'unknown';
-      message = 'Something went wrong — please try again';
+      status = 502;
+      type = 'api_error';
+      message = 'The AI service returned an error — please try again';
     }
 
     return Response.json({ error: { type, message } }, { status });
