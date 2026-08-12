@@ -11,6 +11,18 @@ export interface Message {
 
 export type SessionStatus = 'active' | 'concluding' | 'concluded' | 'refining';
 
+export interface WizardAnswers {
+  driving: string[];
+  priorities: string[];
+  seats: string;
+  parking: string;
+  powertrain: string;
+  price: number;
+  yearMin: number;
+  yearMax: number;
+  notes: string;
+}
+
 export interface ConversationState {
   messages: Message[];
   isStreaming: boolean;
@@ -22,6 +34,8 @@ export interface ConversationState {
   isRefinement: boolean;
   webhookError: string | null;
   isSearching: boolean;
+  searchResults: SearchResultItem[] | null;
+  totalResultCount: number;
 }
 
 export interface MessageParam {
@@ -33,6 +47,8 @@ export interface ChatRequestBody {
   messages: MessageParam[];
   isRefinement: boolean;
   roundCount: number;
+  wizardAnswers?: WizardAnswers;
+  userEmail?: string | null;
 }
 
 export type ChatErrorType = 'rate_limit' | 'connection' | 'api_error' | 'unknown';

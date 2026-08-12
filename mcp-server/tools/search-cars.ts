@@ -3,20 +3,50 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CarSearchPayload } from '../../lib/types/n8n.js';
 import type { NormalizedResponse, ErrorEnvelope, VehicleResult } from '../../lib/types/mcp.js';
 
-const KNOWN_BODY_TYPES = ['hatchback','saloon','estate','suv','crossover','mpv','coupe','convertible','any'];
-const KNOWN_FUEL_TYPES = ['petrol','diesel','hybrid','mild-hybrid','plugin-hybrid','electric','any'];
-const KNOWN_DISPLACEMENTS = ['1.0','1.2','1.4','1.5','1.6','1.8','2.0','2.5','3.0','any'];
+const KNOWN_BODY_TYPES = [
+  'hatchback',
+  'saloon',
+  'estate',
+  'suv',
+  'crossover',
+  'mpv',
+  'coupe',
+  'convertible',
+  'any',
+];
+const KNOWN_FUEL_TYPES = [
+  'petrol',
+  'diesel',
+  'hybrid',
+  'mild-hybrid',
+  'plugin-hybrid',
+  'electric',
+  'any',
+];
+const KNOWN_DISPLACEMENTS = ['1.0', '1.2', '1.4', '1.5', '1.6', '1.8', '2.0', '2.5', '3.0', 'any'];
 
 const inputSchema = {
-  budgetMax: z.number().nullable().optional().describe('Maximum budget in euros, or null if not discussed'),
-  bodyTypes: z.array(z.string()).optional().describe('e.g. ["suv", "hatchback"] or [] for no constraint'),
+  budgetMax: z
+    .number()
+    .nullable()
+    .optional()
+    .describe('Maximum budget in euros, or null if not discussed'),
+  bodyTypes: z
+    .array(z.string())
+    .optional()
+    .describe('e.g. ["suv", "hatchback"] or [] for no constraint'),
   fuelTypes: z.array(z.string()).optional().describe('e.g. ["electric"] or ["any"]'),
   transmission: z.enum(['manual', 'automatic', 'any']),
   minSeats: z.number().nullable().optional().describe('Minimum number of seats, or null'),
-  features: z.array(z.object({
-    name: z.string(),
-    mandatory: z.boolean(),
-  })).optional().describe('Features the user mentioned; empty array if none'),
+  features: z
+    .array(
+      z.object({
+        name: z.string(),
+        mandatory: z.boolean(),
+      })
+    )
+    .optional()
+    .describe('Features the user mentioned; empty array if none'),
   yearMin: z.number().nullable().optional().describe('Minimum model year, or null'),
   yearMax: z.number().nullable().optional().describe('Maximum model year, or null'),
   engineDisplacements: z.array(z.string()).optional().describe('e.g. ["1.5", "2.0"] or ["any"]'),
@@ -24,7 +54,11 @@ const inputSchema = {
   annualMileage: z.string().nullable().optional().describe('e.g. "10000-15000" or null'),
   endTrigger: z.enum(['explicit', 'implicit', 'length-limit', 'refinement', 'unknown']),
   isRefinement: z.boolean().optional().describe('Injected by route handler — not filled by Claude'),
-  userEmail: z.string().nullable().optional().describe('Injected by route handler — not filled by Claude'),
+  userEmail: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Injected by route handler — not filled by Claude'),
 };
 
 type SearchCarsInput = {
@@ -71,13 +105,21 @@ export function validateSearchFilters(input: SearchCarsInput): ErrorEnvelope | n
   }
 
   if (input.yearMin != null) {
-    if (!Number.isInteger(input.yearMin) || input.yearMin < 1900 || input.yearMin > currentYear + 1) {
+    if (
+      !Number.isInteger(input.yearMin) ||
+      input.yearMin < 1900 ||
+      input.yearMin > currentYear + 1
+    ) {
       errors.push(`yearMin must be an integer in [1900, ${currentYear + 1}]`);
     }
   }
 
   if (input.yearMax != null) {
-    if (!Number.isInteger(input.yearMax) || input.yearMax < 1900 || input.yearMax > currentYear + 1) {
+    if (
+      !Number.isInteger(input.yearMax) ||
+      input.yearMax < 1900 ||
+      input.yearMax > currentYear + 1
+    ) {
       errors.push(`yearMax must be an integer in [1900, ${currentYear + 1}]`);
     }
   }
@@ -106,17 +148,22 @@ export function validateSearchFilters(input: SearchCarsInput): ErrorEnvelope | n
   return null;
 }
 
-export async function executeSearchCars(input: SearchCarsInput): Promise<NormalizedResponse | ErrorEnvelope> {
-  const filterSummary = [
-    input.budgetMax != null && `budget≤${input.budgetMax}`,
-    input.bodyTypes?.length && `body:[${input.bodyTypes.join(',')}]`,
-    input.fuelTypes?.length && `fuel:[${input.fuelTypes.join(',')}]`,
-    input.transmission !== 'any' && `tx:${input.transmission}`,
-    input.usageContext !== 'any' && `usage:${input.usageContext}`,
-    input.yearMin != null && `year≥${input.yearMin}`,
-    input.yearMax != null && `year≤${input.yearMax}`,
-    input.isRefinement && 'refinement',
-  ].filter(Boolean).join(' ') || 'no filters';
+export async function executeSearchCars(
+  input: SearchCarsInput
+): Promise<NormalizedResponse | ErrorEnvelope> {
+  const filterSummary =
+    [
+      input.budgetMax != null && `budget≤${input.budgetMax}`,
+      input.bodyTypes?.length && `body:[${input.bodyTypes.join(',')}]`,
+      input.fuelTypes?.length && `fuel:[${input.fuelTypes.join(',')}]`,
+      input.transmission !== 'any' && `tx:${input.transmission}`,
+      input.usageContext !== 'any' && `usage:${input.usageContext}`,
+      input.yearMin != null && `year≥${input.yearMin}`,
+      input.yearMax != null && `year≤${input.yearMax}`,
+      input.isRefinement && 'refinement',
+    ]
+      .filter(Boolean)
+      .join(' ') || 'no filters';
   console.log(`[search_cars] invoked — ${filterSummary}`);
 
   const validationError = validateSearchFilters(input);
@@ -209,7 +256,10 @@ export async function executeSearchCars(input: SearchCarsInput): Promise<Normali
 
   const result = normalizeN8nResponse(raw);
   if ('results' in result) {
-    console.log(`[search_cars] ✓ ${result.results.length} result(s) returned (total: ${result.totalCount})`);
+    console.log(
+      `[search_cars] ✓ ${result.results.length} result(s) returned (total: ${result.totalCount})`
+    );
+    //console.log(result)
   }
   return result;
 }
@@ -263,11 +313,19 @@ function normalizeN8nResponse(raw: unknown): NormalizedResponse | ErrorEnvelope 
       year: r.year as number,
       price: typeof r.price === 'number' ? r.price : null,
       sourceUrl: typeof r.sourceUrl === 'string' ? r.sourceUrl : null,
+      mileage: r.mileage as string,
+      features: r.features as string[],
+      fuelType: r.fuelType as string[],
+      seatCount: r.seatCount as number,
+      transmission: r.transmission as string,
+      imageUrl: r.imageUrl as string,
     });
   }
 
   if (mismatchedFields.length > 0) {
-    console.warn(`[search_cars] Schema mismatch in ${mismatchedFields.length} item(s): ${mismatchedFields.join('; ')}`);
+    console.warn(
+      `[search_cars] Schema mismatch in ${mismatchedFields.length} item(s): ${mismatchedFields.join('; ')}`
+    );
   }
 
   const totalCount = typeof data.totalCount === 'number' ? data.totalCount : results.length;
@@ -280,7 +338,7 @@ export function registerSearchCarsTool(server: McpServer): void {
     'search_cars',
     {
       description:
-        'Search the vehicle database using structured filters derived from the user\'s conversation. All fields are optional; omitting all fields returns all available vehicles. Call this tool when the conversation is complete and you have gathered sufficient lifestyle information to construct a meaningful search.',
+        "Search the vehicle database using structured filters derived from the user's conversation. All fields are optional; omitting all fields returns all available vehicles. Call this tool when the conversation is complete and you have gathered sufficient lifestyle information to construct a meaningful search.",
       inputSchema,
     },
     async (input) => {

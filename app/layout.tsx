@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import Header from '@/components/Header/Header';
-import './globals.css';
+import '../components/newdesign.css';
 
 export const metadata: Metadata = {
   title: 'AI Car Buying Assistant',
@@ -10,14 +9,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100vh',
-        }}
-      >
-        <Header />
+      <body>
         {children}
       </body>
     </html>
