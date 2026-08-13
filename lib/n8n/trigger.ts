@@ -16,9 +16,14 @@ export async function fireWebhookWithRetry(url: string, payload: CarSearchPayloa
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const authToken = process.env.N8N_WEBHOOK_AUTH_TOKEN;
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(30_000),
       });

@@ -9,7 +9,7 @@ export interface Message {
   searchResults?: { items: SearchResultItem[]; totalCount: number };
 }
 
-export type SessionStatus = 'active' | 'concluding' | 'concluded' | 'refining';
+export type SessionStatus = 'active' | 'concluded' | 'refining';
 
 export interface WizardAnswers {
   driving: string[];
@@ -23,32 +23,9 @@ export interface WizardAnswers {
   notes: string;
 }
 
-export interface ConversationState {
-  messages: Message[];
-  isStreaming: boolean;
-  streamingContent: string;
-  error: string | null;
-  sessionStatus: SessionStatus;
-  roundCount: number;
-  consecutiveRefusals: number;
-  isRefinement: boolean;
-  webhookError: string | null;
-  isSearching: boolean;
-  searchResults: SearchResultItem[] | null;
-  totalResultCount: number;
-}
-
 export interface MessageParam {
   role: MessageRole;
   content: string;
-}
-
-export interface ChatRequestBody {
-  messages: MessageParam[];
-  isRefinement: boolean;
-  roundCount: number;
-  wizardAnswers?: WizardAnswers;
-  userEmail?: string | null;
 }
 
 export type ChatErrorType = 'rate_limit' | 'connection' | 'api_error' | 'unknown';
@@ -59,5 +36,3 @@ export interface ChatErrorResponse {
     message: string;
   };
 }
-
-export type ChatInterfaceProps = Record<string, never>;

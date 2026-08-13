@@ -62,7 +62,15 @@ export async function callSearchCars(args: SearchCarsArgs): Promise<NormalizedRe
       };
     }
 
-    return JSON.parse(firstContent.text) as NormalizedResponse | ErrorEnvelope;
+    try {
+      return JSON.parse(firstContent.text) as NormalizedResponse | ErrorEnvelope;
+    } catch {
+      return {
+        code: 'SCHEMA_MISMATCH',
+        message: 'MCP server returned non-JSON tool response',
+        details: [`Response text: ${firstContent.text.slice(0, 200)}`],
+      };
+    }
   } finally {
     await client.close().catch(() => undefined);
   }

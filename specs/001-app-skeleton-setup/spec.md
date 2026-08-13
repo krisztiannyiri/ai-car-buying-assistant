@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-04
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "initial setup - prepare the app skeleton"
 

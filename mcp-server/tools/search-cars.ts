@@ -78,6 +78,7 @@ type SearchCarsInput = {
   userEmail?: string | null;
 };
 
+
 export function validateSearchFilters(input: SearchCarsInput): ErrorEnvelope | null {
   const errors: string[] = [];
   const currentYear = new Date().getFullYear();
@@ -259,7 +260,6 @@ export async function executeSearchCars(
     console.log(
       `[search_cars] ✓ ${result.results.length} result(s) returned (total: ${result.totalCount})`
     );
-    //console.log(result)
   }
   return result;
 }
@@ -288,7 +288,7 @@ function normalizeN8nResponse(raw: unknown): NormalizedResponse | ErrorEnvelope 
   const results: VehicleResult[] = [];
   const mismatchedFields: string[] = [];
 
-  for (const item of data.results as unknown[]) {
+  for (const [idx, item] of (data.results as unknown[]).entries()) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       mismatchedFields.push('item: not an object');
       continue;
@@ -306,19 +306,19 @@ function normalizeN8nResponse(raw: unknown): NormalizedResponse | ErrorEnvelope 
     }
 
     results.push({
-      id: `${r.make}-${r.model}-${r.year}`,
+      id: `${r.make}-${r.model}-${r.year}-${idx}`,
       make: r.make as string,
       model: r.model as string,
       bodyType: typeof r.bodyType === 'string' ? r.bodyType : null,
       year: r.year as number,
       price: typeof r.price === 'number' ? r.price : null,
       sourceUrl: typeof r.sourceUrl === 'string' ? r.sourceUrl : null,
-      mileage: r.mileage as string,
-      features: r.features as string[],
-      fuelType: r.fuelType as string[],
-      seatCount: r.seatCount as number,
-      transmission: r.transmission as string,
-      imageUrl: r.imageUrl as string,
+      mileage: typeof r.mileage === 'string' ? r.mileage : null,
+      features: Array.isArray(r.features) ? (r.features as string[]) : [],
+      fuelType: Array.isArray(r.fuelType) ? (r.fuelType as string[]) : null,
+      seatCount: typeof r.seatCount === 'number' ? r.seatCount : null,
+      transmission: typeof r.transmission === 'string' ? r.transmission : null,
+      imageUrl: typeof r.imageUrl === 'string' ? r.imageUrl : null,
     });
   }
 

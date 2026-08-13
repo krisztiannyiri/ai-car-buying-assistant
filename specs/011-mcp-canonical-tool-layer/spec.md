@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-12
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "Remove the redundant tool creation in app/api/chat/route.ts and use MCP as the actual tool provider, keeping the route focused on: building the system prompt, passing conversation/messages, handling stream output, transforming MCP results into frontend events if needed"
 

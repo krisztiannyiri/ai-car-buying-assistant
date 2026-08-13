@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-04
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "I want to introduce n8n to this project. I want to use the official n8n mcp to manage workflows."
 

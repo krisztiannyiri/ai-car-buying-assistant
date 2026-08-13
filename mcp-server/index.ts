@@ -5,6 +5,11 @@ import { registerTools } from './tools/registry.js';
 
 const PORT = parseInt(process.env.MCP_SERVER_PORT ?? '3001', 10);
 
+type JsonRpcRequestBody = {
+  method?: string;
+  params?: { name?: string };
+};
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: 'vehicle-search-mcp-server',
@@ -23,7 +28,15 @@ const httpServer = http.createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   req.on('data', (chunk: Buffer) => chunks.push(chunk));
   await new Promise<void>((resolve) => req.on('end', resolve));
-  const body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
+  let body: JsonRpcRequestBody | undefined;
+  if (chunks.length > 0) {
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString()) as JsonRpcRequestBody;
+    } catch {
+      res.writeHead(400).end('Invalid JSON');
+      return;
+    }
+  }
 
   const method = body?.method ?? 'unknown';
   const toolName = body?.params?.name ?? '';
@@ -41,6 +54,6 @@ const httpServer = http.createServer(async (req, res) => {
   await transport.handleRequest(req, res, body);
 });
 
-httpServer.listen(PORT, '127.0.0.1', () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`MCP vehicle search server listening on http://localhost:${PORT}/mcp`);
 });

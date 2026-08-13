@@ -23,7 +23,6 @@ import {
   Route,
   Search,
   Send,
-  Settings2,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -34,9 +33,9 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import type { Message, WizardAnswers, SessionStatus } from '@/lib/types/chat';
+import type { Message, WizardAnswers, SessionStatus, ChatErrorResponse, ChatErrorType } from '@/lib/types/chat';
 import type { SearchResultItem, CarSearchPayload, WebhookEvent } from '@/lib/types/n8n';
-import type { ChatErrorResponse, ChatErrorType } from '@/lib/types/chat';
+import { SENTINEL_WEBHOOK_EVENT, SENTINEL_SEARCH_STARTED } from '@/lib/constants/sentinels';
 
 type Answers = WizardAnswers;
 
@@ -45,8 +44,8 @@ type StepProps = {
   setAnswers: React.Dispatch<React.SetStateAction<Answers>>;
 };
 
-const SENTINEL = '\n\n__WEBHOOK_EVENT__';
-const SEARCH_STARTED_SENTINEL = '\n\n__SEARCH_STARTED__';
+const SENTINEL = SENTINEL_WEBHOOK_EVENT;
+const SEARCH_STARTED_SENTINEL = SENTINEL_SEARCH_STARTED;
 
 const ERROR_MESSAGES: Record<ChatErrorType, string> = {
   rate_limit: 'Too many requests — please wait a moment and try again',
@@ -409,7 +408,7 @@ function StepOne({ answers, setAnswers }: StepProps) {
   );
 }
 
-const PRIORITY_COUNT = 8;
+const PRIORITY_COUNT = priorityOptions.length;
 
 function StepTwo({ answers, setAnswers }: StepProps) {
   const toggle = (label: string) => {
@@ -687,7 +686,12 @@ function Results({
         const carKey = `${car.make}-${car.model}-${car.year}-${index}`;
         const priceLabel =
           car.price != null ? `$${car.price.toLocaleString()}` : 'Price not available';
-        const specParts = [car.bodyType, car.fuelType, car.transmission, car.seatCount ? `${car.seatCount} seats` : null].filter(Boolean);
+        const specParts = [
+          car.bodyType,
+          car.fuelType?.join(' / '),
+          car.transmission,
+          car.seatCount ? `${car.seatCount} seats` : null,
+        ].filter(Boolean);
         return (
           <motion.article
             initial={{ opacity: 0, y: 18 }}
@@ -966,13 +970,13 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  const mainScrollRef = useRef<HTMLElement>(null);
   const [answers, setAnswers] = useState<Answers>({ ...initialAnswers });
 
   // Conversation state
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('active');
   const [roundCount, setRoundCount] = useState(0);
   const [isRefinement, setIsRefinement] = useState(false);
@@ -1005,7 +1009,6 @@ export default function App() {
     setMessages([...initialMessages]);
     setIsStreaming(false);
     setStreamingContent('');
-    setError(null);
     setSessionStatus('active');
     setRoundCount(0);
     setIsRefinement(false);
@@ -1050,7 +1053,6 @@ export default function App() {
 
     setIsStreaming(true);
     setStreamingContent('');
-    setError(null);
     setWebhookError(null);
 
     if (goingIntoRefinement) {
@@ -1074,7 +1076,6 @@ export default function App() {
         body: JSON.stringify({
           messages: apiMessages,
           isRefinement: effectiveIsRefinement,
-          roundCount,
           userEmail: userEmail || null,
           wizardAnswers: wizardContext ?? submittedWizardAnswers ?? undefined,
         }),
@@ -1085,7 +1086,6 @@ export default function App() {
         const errorData: ChatErrorResponse = await response.json();
         const errorMessage = ERROR_MESSAGES[errorData.error.type] ?? ERROR_MESSAGES.unknown;
         setIsStreaming(false);
-        setError(errorMessage);
         setMessages((prev) => [
           ...prev,
           { id: crypto.randomUUID(), role: 'assistant', content: errorMessage },
@@ -1193,7 +1193,6 @@ export default function App() {
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       setIsStreaming(false);
-      setError(ERROR_MESSAGES.unknown);
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'assistant', content: ERROR_MESSAGES.unknown },
@@ -1216,9 +1215,13 @@ export default function App() {
       });
 
       if (response.ok) {
+        const data = await response.json() as { results?: SearchResultItem[]; totalCount?: number };
         retryPayloadRef.current = null;
         setIsStreaming(false);
+        setSearchResults(data.results ?? []);
+        setTotalResultCount(data.totalCount ?? 0);
         setSessionStatus('concluded');
+        setCurrentStep(4);
         setWebhookError(null);
       } else {
         setIsStreaming(false);
@@ -1235,10 +1238,7 @@ export default function App() {
     const next = currentStep + 1;
     setCurrentStep(next);
     setMaxStep((value) => Math.max(value, next));
-    window.setTimeout(
-      () => document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' }),
-      50
-    );
+    window.setTimeout(() => mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 50);
 
     if (currentStep === 3) {
       sendChat('', answers);
@@ -1306,7 +1306,7 @@ export default function App() {
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1">
-          <main className="min-w-0 flex-1 overflow-y-auto">
+          <main ref={mainScrollRef} className="min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[780px] px-4 pb-10 pt-7 sm:px-8 sm:pt-10 xl:pt-12">
               <div className="mb-8">
                 <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7d867b]">

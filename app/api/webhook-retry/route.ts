@@ -1,12 +1,7 @@
 import type { CarSearchPayload } from '@/lib/types/n8n';
-import { fireWebhookWithRetry } from '@/lib/n8n/trigger';
+import { callSearchCars } from '@/lib/mcp/client';
 
 export async function POST(request: Request): Promise<Response> {
-  const webhookUrl = process.env.N8N_WEBHOOK_CAR_SEARCH_URL;
-  if (!webhookUrl) {
-    return Response.json({ status: 'failed', errorMessage: 'Webhook URL not configured' }, { status: 500 });
-  }
-
   let payload: CarSearchPayload;
   try {
     payload = await request.json();
@@ -14,6 +9,17 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ status: 'failed', errorMessage: 'Invalid payload' }, { status: 400 });
   }
 
-  const result = await fireWebhookWithRetry(webhookUrl, payload);
-  return Response.json(result, { status: result.status === 'success' ? 200 : 502 });
+  const result = await callSearchCars(payload);
+
+  if ('code' in result) {
+    return Response.json(
+      { status: 'failed', errorMessage: result.message },
+      { status: 502 }
+    );
+  }
+
+  return Response.json(
+    { status: 'success', results: result.results, totalCount: result.totalCount },
+    { status: 200 }
+  );
 }

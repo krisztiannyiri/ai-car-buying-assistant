@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-06
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "I want to adjust my car buying assistant. I feel it's relying a bit too much on the user input. The car buying assistant must act as an expert advisor, not rely on the user to know technical car details. Most users only know their functional needs, budget, and preferences, so the assistant should ask about usage and constraints, then infer the relevant technical requirements itself. It should research facts, evaluate tradeoffs, and recommend the best-fit vehicle based on real-world needs, not just user assumptions. The assistant should clearly explain pros and cons, and only ask preference-based follow-up questions when multiple options are similarly strong. In those cases, it should present the tradeoffs so the user can make an informed choice."
 

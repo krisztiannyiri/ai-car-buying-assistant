@@ -3,6 +3,7 @@ import type { MessageParam, ChatErrorType, WizardAnswers } from '@/lib/types/cha
 import type { CarSearchPayload, WebhookEvent } from '@/lib/types/n8n';
 import { callSearchCars, fetchMcpToolSchemas } from '@/lib/mcp/client';
 import { isErrorEnvelope } from '@/lib/types/mcp';
+import { SENTINEL_SEARCH_STARTED, SENTINEL_WEBHOOK_EVENT } from '@/lib/constants/sentinels';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -68,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
             message: 'Something went wrong — please try again',
           },
         },
-        { status: 500 }
+        { status: 400 }
       );
     }
   } catch {
@@ -79,7 +80,7 @@ export async function POST(request: Request): Promise<Response> {
           message: 'Something went wrong — please try again',
         },
       },
-      { status: 500 }
+      { status: 400 }
     );
   }
 
@@ -119,13 +120,29 @@ export async function POST(request: Request): Promise<Response> {
           } else if (event.type === 'content_block_stop' && toolUseActive) {
             toolUseActive = false;
             if (toolUseName === 'search_cars') {
-              const toolInput = JSON.parse(toolUseInputJson) as Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
+              let toolInput: Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
+              try {
+                toolInput = JSON.parse(toolUseInputJson) as Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
+              } catch {
+                controller.enqueue(
+                  encoder.encode(
+                    SENTINEL_WEBHOOK_EVENT +
+                      JSON.stringify({
+                        status: 'failed',
+                        endTrigger: 'unknown',
+                        errorMessage: 'Failed to parse search parameters from the AI response',
+                      } satisfies WebhookEvent)
+                  )
+                );
+                controller.close();
+                return;
+              }
               const retryPayload: CarSearchPayload = {
                 ...toolInput,
                 isRefinement,
                 userEmail,
               };
-              controller.enqueue(encoder.encode('\n\n__SEARCH_STARTED__'));
+              controller.enqueue(encoder.encode(SENTINEL_SEARCH_STARTED));
               const mcpResult = await callSearchCars({ ...toolInput, isRefinement, userEmail });
               const webhookEvent: WebhookEvent = isErrorEnvelope(mcpResult)
                 ? {
@@ -141,7 +158,7 @@ export async function POST(request: Request): Promise<Response> {
                     totalCount: mcpResult.totalCount,
                   };
               controller.enqueue(
-                encoder.encode('\n\n__WEBHOOK_EVENT__' + JSON.stringify(webhookEvent))
+                encoder.encode(SENTINEL_WEBHOOK_EVENT + JSON.stringify(webhookEvent))
               );
             }
           }
