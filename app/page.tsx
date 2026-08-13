@@ -1,5 +1,5 @@
-import NewDesign from '@/components/NewDesign';
+import CarBuyingAssistant from '@/components/CarBuyingAssistant';
 
 export default function HomePage() {
-  return <NewDesign />;
+  return <CarBuyingAssistant />;
 }

@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "dev:mcp": "tsx --env-file=.env.local mcp-server/index.ts"
   },
   "dependencies": {

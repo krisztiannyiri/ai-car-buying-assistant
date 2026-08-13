@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import '../components/newdesign.css';
+import './globals.css';
 
 export const metadata: Metadata = {
   title: 'AI Car Buying Assistant',

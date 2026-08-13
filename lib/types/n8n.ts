@@ -44,13 +44,7 @@ export interface WebhookEvent {
   totalCount?: number;
 }
 
-export interface TriggerLogEntry {
-  timestamp: string;
-  webhookUrl: string;
-  payload: CarSearchPayload;
-  error: string;
-}
-
+/** Shape returned by POST /api/webhook-retry. */
 export interface WebhookResult {
   status: 'success' | 'failed';
   errorMessage?: string;

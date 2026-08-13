@@ -3,26 +3,12 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CarSearchPayload } from '../../lib/types/n8n.js';
 import type { NormalizedResponse, ErrorEnvelope, VehicleResult } from '../../lib/types/mcp.js';
 
-const KNOWN_BODY_TYPES = [
-  'hatchback',
-  'saloon',
-  'estate',
-  'suv',
-  'crossover',
-  'mpv',
-  'coupe',
-  'convertible',
-  'any',
-];
-const KNOWN_FUEL_TYPES = [
-  'petrol',
-  'diesel',
-  'hybrid',
-  'mild-hybrid',
-  'plugin-hybrid',
-  'electric',
-  'any',
-];
+// These must stay in sync with the n8n car_listings Data Store enums
+// (specs/005-webhook-db-search/contracts/car-search-data-store.md). Accepting a
+// value the store cannot hold produces a silent zero-result search, so anything
+// outside these lists is rejected with an actionable VALIDATION_ERROR instead.
+const KNOWN_BODY_TYPES = ['hatchback', 'saloon', 'estate', 'suv', 'coupe', 'any'];
+const KNOWN_FUEL_TYPES = ['petrol', 'diesel', 'hybrid', 'electric', 'any'];
 const KNOWN_DISPLACEMENTS = ['1.0', '1.2', '1.4', '1.5', '1.6', '1.8', '2.0', '2.5', '3.0', 'any'];
 
 const inputSchema = {
@@ -34,8 +20,13 @@ const inputSchema = {
   bodyTypes: z
     .array(z.string())
     .optional()
-    .describe('e.g. ["suv", "hatchback"] or ["any"] for no constraint'),
-  fuelTypes: z.array(z.string()).optional().describe('e.g. ["electric"] or ["any"]'),
+    .describe(
+      'Allowed: hatchback, saloon, estate, suv, coupe, any. e.g. ["suv", "hatchback"] or ["any"] for no constraint'
+    ),
+  fuelTypes: z
+    .array(z.string())
+    .optional()
+    .describe('Allowed: petrol, diesel, hybrid, electric, any. e.g. ["electric"] or ["any"]'),
   transmission: z.enum(['manual', 'automatic', 'any']),
   minSeats: z.number().nullable().optional().describe('Minimum number of seats, or null'),
   features: z
@@ -89,19 +80,21 @@ export function validateSearchFilters(input: SearchCarsInput): ErrorEnvelope | n
 
   for (const bt of input.bodyTypes ?? []) {
     if (!KNOWN_BODY_TYPES.includes(bt)) {
-      errors.push(`bodyTypes: unknown value "${bt}"`);
+      errors.push(`bodyTypes: "${bt}" is not searchable — use one of ${KNOWN_BODY_TYPES.join(', ')}`);
     }
   }
 
   for (const ft of input.fuelTypes ?? []) {
     if (!KNOWN_FUEL_TYPES.includes(ft)) {
-      errors.push(`fuelTypes: unknown value "${ft}"`);
+      errors.push(`fuelTypes: "${ft}" is not searchable — use one of ${KNOWN_FUEL_TYPES.join(', ')}`);
     }
   }
 
   for (const ed of input.engineDisplacements ?? []) {
     if (!KNOWN_DISPLACEMENTS.includes(ed)) {
-      errors.push(`engineDisplacements: unknown value "${ed}"`);
+      errors.push(
+        `engineDisplacements: "${ed}" is not searchable — use one of ${KNOWN_DISPLACEMENTS.join(', ')}`
+      );
     }
   }
 

@@ -29,15 +29,14 @@ Two design decisions dominate everything else in this document:
 ```mermaid
 graph TB
     subgraph browser["Browser"]
-        UI["NewDesign.tsx<br/>'use client' — wizard, chat, results<br/>1421 lines, 12 sub-components plus App"]
+        UI["CarBuyingAssistant.tsx<br/>'use client' — thin orchestrator<br/>useWizardFlow + useConversation"]
     end
 
     subgraph next["Next.js 16 server — port 3000"]
         PAGE["app/page.tsx + layout.tsx<br/>Server Components, static shell"]
         CHAT["POST /api/chat<br/>Anthropic stream + sentinel emission"]
-        RETRY["POST /api/webhook-retry<br/>legacy direct path"]
-        MCPC["lib/mcp/client.ts<br/>fetchMcpToolSchemas, callSearchCars"]
-        TRIG["lib/n8n/trigger.ts<br/>fireWebhookWithRetry"]
+        RETRY["POST /api/webhook-retry<br/>same MCP path as /api/chat"]
+        MCPC["lib/mcp/client.ts<br/>fetchMcpToolSchemas (cached), callSearchCars"]
     end
 
     subgraph mcp["MCP server — port 3001, path /mcp"]
@@ -60,17 +59,19 @@ graph TB
     UI -->|"fetch POST, JSON"| RETRY
     CHAT --> ANTH
     CHAT --> MCPC
+    RETRY --> MCPC
     MCPC -->|"MCP Streamable HTTP"| REG
     REG --> TOOL
     TOOL -->|"HTTP POST, 5s timeout, optional Bearer"| N8N
-    RETRY --> TRIG
-    TRIG -->|"HTTP POST, 30s, 2 attempts, no auth"| N8N
     N8N --> DS
     N8N --> SMTP
 ```
 
 The **Next.js app is not in Docker Compose** — only `n8n` and `mcp-server` are. In practice the
 app and often the MCP server run on the host while n8n runs in a container.
+
+Both routes reach n8n through the same MCP path, so validation, auth, and normalization apply
+identically to an original search and to a retry.
 
 ---
 
@@ -84,16 +85,19 @@ app and often the MCP server run on the host while n8n runs in a container.
 | Anthropic API | — | — | model `claude-haiku-4-5`, `max_tokens: 1500` |
 | SMTP | — | — | credential configured in the n8n UI only |
 
-`npm run dev:mcp` is `tsx --env-file=.env.local mcp-server/index.ts` (`package.json:9`) — the MCP
-server reads env directly from `.env.local`, it does not go through Next.js.
+`npm run dev:mcp` is `tsx --env-file=.env.local mcp-server/index.ts` — the MCP server reads env
+directly from `.env.local`, it does not go through Next.js. `npm run typecheck` (`tsc --noEmit`)
+covers the app and the MCP server in one pass, since both live under the same `tsconfig.json`.
 
 There is no build step for the MCP server in either dev or Docker; `mcp-server/Dockerfile` runs
-`npx tsx mcp-server/index.ts` and copies `lib/` in because `mcp-server/` imports from it.
+`./node_modules/.bin/tsx mcp-server/index.ts` as the non-root `node` user, and copies `lib/` in
+because `mcp-server/` imports from it. It runs `npm ci` (not `--omit=dev`) because `tsx` is a
+devDependency needed at runtime.
 
-**Startup order matters.** The chat route calls `fetchMcpToolSchemas()` before it calls Anthropic
-(`app/api/chat/route.ts:89`), and that function *throws* if `MCP_SERVER_URL` is unset. If the MCP
-server is down, every chat request fails with HTTP 502 `api_error` — the app has no
-tool-less fallback.
+**Startup order matters.** The chat route calls `fetchMcpToolSchemas()` before it calls Anthropic,
+and that function *throws* if `MCP_SERVER_URL` is unset. If the MCP server is down, every chat
+request fails with HTTP 502 `api_error` — the app has no tool-less fallback. Compose gates
+`mcp-server` on an n8n healthcheck, so the container does not start before n8n can answer.
 
 ---
 
@@ -103,7 +107,7 @@ tool-less fallback.
 sequenceDiagram
     autonumber
     actor U as User
-    participant C as Client NewDesign
+    participant C as Client CarBuyingAssistant
     participant R as Route /api/chat
     participant A as Anthropic API
     participant M as MCP server
@@ -137,7 +141,8 @@ sequenceDiagram
     C-->>U: up to 5 result cards
 ```
 
-Note steps 3–4: **two separate MCP round trips per chat request**, each opening and closing a
+Note steps 3–4: the `tools/list` round trip is **skipped when the schema cache is warm** (60 s
+TTL), so a typical request makes one MCP round trip rather than two. Each still opens and closes a
 fresh transport (see §6).
 
 ### The system prompt
@@ -170,41 +175,60 @@ This is the least obvious part of the system and the thing worth understanding f
 Control information is smuggled into the text stream as two magic strings:
 
 ```
-<Claude's text tokens, enqueued verbatim>          route.ts:115
-\n\n__SEARCH_STARTED__                             route.ts:128  (before callSearchCars)
+<Claude's text tokens, enqueued verbatim>
+\n\n__SEARCH_STARTED__                             (before callSearchCars)
    … silent gap while MCP → n8n runs …
-\n\n__WEBHOOK_EVENT__{"status":"success", …}       route.ts:143-145
+\n\n__WEBHOOK_EVENT__{"status":"success", …}
 ```
 
-Both literals are declared once on each side of the wire:
-`components/NewDesign.tsx:48-49` and `app/api/chat/route.ts:128,144`. They are *not* shared
-constants — the strings are duplicated across the client/server boundary.
+Both literals live in **one place**: `lib/constants/sentinels.ts` exports
+`SENTINEL_SEARCH_STARTED` and `SENTINEL_WEBHOOK_EVENT`, imported by both
+`app/api/chat/route.ts` and `hooks/useConversation.ts`. Renaming one now changes both sides.
 
 ### How the client decodes it
 
-`sendChat()` (`components/NewDesign.tsx:1096-1114`) reads with `response.body.getReader()` and a
+`sendChat()` in `hooks/useConversation.ts` reads with `response.body.getReader()` and a
 `TextDecoder`, accumulating into one buffer. On every chunk it finds the **earliest** of the two
 markers and renders only the prefix:
 
 ```ts
-const webhookIdx = accumulated.indexOf(SENTINEL);
-const searchStartedIdx = accumulated.indexOf(SEARCH_STARTED_SENTINEL);
+const webhookIdx = accumulated.indexOf(SENTINEL_WEBHOOK_EVENT);
+const searchStartedIdx = accumulated.indexOf(SENTINEL_SEARCH_STARTED);
 const markers = [webhookIdx, searchStartedIdx].filter((i) => i !== -1);
 const firstMarker = markers.length > 0 ? Math.min(...markers) : -1;
-const displayContent = firstMarker !== -1 ? accumulated.slice(0, firstMarker) : accumulated;
-setStreamingContent(displayContent);
+
+setStreamingContent(firstMarker !== -1 ? accumulated.slice(0, firstMarker) : accumulated);
 setIsSearching(searchStartedIdx !== -1);
 ```
 
-After the stream closes (`components/NewDesign.tsx:1116-1192`) it splits on `__WEBHOOK_EVENT__` and
-`JSON.parse`s the tail into a `WebhookEvent`. Three outcomes:
+After the stream closes it splits on `__WEBHOOK_EVENT__` and `JSON.parse`s the tail into a
+`WebhookEvent`. Four outcomes:
 
 - **`status: 'success'`** — commit prefix text as an assistant message, `setSearchResults`,
-  `setTotalResultCount`, `setSessionStatus('concluded')`, jump to `setCurrentStep(4)`.
+  `setTotalResultCount`, `setSessionStatus('concluded')`, then call `onSearchResolved()` which
+  the orchestrator wires to `useWizardFlow`'s `jumpToResults()`.
 - **`status: 'failed'`** — stash `retryPayload` in `retryPayloadRef`, show `webhookError` with a
   retry affordance.
-- **No sentinel at all** — the whole buffer becomes an assistant message and `roundCount`
-  increments. This is the plain-conversation path.
+- **Malformed JSON tail** — the prefix text becomes an assistant message; the raw tail is
+  discarded rather than rendered.
+- **No sentinel at all** — the whole buffer becomes an assistant message. This is the
+  plain-conversation path.
+
+### Errors after the headers are sent
+
+The Anthropic stream is consumed **inside** `ReadableStream.start()`, which runs after the `200`
+has been committed. A throw there does *not* reach the route's enclosing `try/catch`, so it cannot
+become an HTTP error status — left unhandled it becomes an unhandled rejection, the connection
+drops, and the client waits forever.
+
+The route therefore wraps the whole stream body and reports failures *inside* the stream: any
+upstream error (rate limit, budget, connection drop, overload) and any unparseable `tool_use` JSON
+is emitted as a `status: 'failed'` `__WEBHOOK_EVENT__` carrying the same user-facing copy the
+pre-stream path would have returned. `describeUpstreamError()` is shared by both paths, so the
+message a user sees does not depend on *when* the failure happened.
+
+This means a failed chat request can legitimately return `200` with a failure event in the body.
+Only failures *before* the stream opens — notably `fetchMcpToolSchemas()` — produce a 4xx/5xx.
 
 ### Protocol state machine
 
@@ -218,7 +242,8 @@ stateDiagram-v2
     Searching --> Resolved: WEBHOOK_EVENT plus JSON tail
     Resolved --> Concluded: status success
     Resolved --> Failed: status failed
-    PlainReply --> Idle: roundCount incremented
+    Resolved --> PlainReply: malformed JSON tail
+    PlainReply --> Idle: prefix committed as message
     Concluded --> Streaming: user refines, isRefinement set true
     Failed --> Retrying: user triggers retry
     Retrying --> Concluded: webhook-retry returns 2xx
@@ -232,11 +257,7 @@ The route intercepts the tool call mid-stream and resolves it server-side, so th
 Claude's confirmation sentence immediately and a loading state during the n8n round trip —
 without a second model call. The trade-off is that the model has no knowledge of the results: it
 cannot rank them, explain them, or answer follow-up questions about them. All presentation logic
-lives in React (`Results`, `components/NewDesign.tsx:632-775`).
-
-A consequence worth knowing: because a `JSON.parse` failure on the tail falls through to the
-"treat it as an assistant message" branch (`components/NewDesign.tsx:1169-1180`), a malformed
-`__WEBHOOK_EVENT__` payload surfaces as the raw JSON text appearing in the chat bubble.
+lives in React (`components/Results.tsx`).
 
 ---
 
@@ -246,13 +267,15 @@ A consequence worth knowing: because a `JSON.parse` failure on the tail falls th
 
 `mcp-server/index.ts` is a bare `node:http` server, not a framework:
 
-- Requests to any path other than `/mcp` get a 404 (`mcp-server/index.ts:18-21`).
+- Requests to any path other than `/mcp` get a 404.
+- A malformed JSON body gets a 400 rather than throwing out of the request handler.
 - Transport is `StreamableHTTPServerTransport` with `sessionIdGenerator: undefined`, i.e. **fully
-  stateless** — no session IDs, no shared state (`mcp-server/index.ts:33`).
-- A **new `McpServer` and a new transport are constructed per HTTP request** (`mcp-server/index.ts:32-33`),
-  both closed on `res.close` (`mcp-server/index.ts:35-38`).
-- Server identity: `name: 'vehicle-search-mcp-server', version: '1.0.0'` (`mcp-server/index.ts:9-12`).
-- Every request is logged as `[mcp] → <method> (<toolName>)` (`mcp-server/index.ts:30`).
+  stateless** — no session IDs, no shared state.
+- A **new `McpServer` and a new transport are constructed per HTTP request**, both closed on
+  `res.close`.
+- Binds `0.0.0.0`, so the published Docker port `3001:3001` reaches the process.
+- Server identity: `name: 'vehicle-search-mcp-server', version: '1.0.0'`.
+- Every request is logged as `[mcp] → <method> (<toolName>)`.
 
 ### Registry
 
@@ -271,9 +294,8 @@ appears automatically in the model's tool list, because the route fetches schema
 
 ### Client
 
-`lib/mcp/client.ts` exposes two functions, and **neither caches or pools connections** — each
-builds a fresh `Client` + `StreamableHTTPClientTransport`, connects, acts, and closes in a
-`finally` block (`lib/mcp/client.ts:18-31`, `lib/mcp/client.ts:44-68`).
+`lib/mcp/client.ts` exposes two functions. Neither pools connections — each builds a fresh
+`Client` + `StreamableHTTPClientTransport`, connects, acts, and closes in a `finally` block.
 
 `fetchMcpToolSchemas()` performs the MCP → Anthropic schema conversion, which is a pure
 property rename with no transformation:
@@ -286,9 +308,16 @@ return tools.map((tool) => ({
 }));
 ```
 
+Its result is **cached at module scope for 60 seconds**, so a warm chat request makes only one
+MCP round trip (`tools/call`) instead of two. The TTL means a redeployed MCP server is picked up
+without restarting Next.js.
+
+`callSearchCars()` returns an `ErrorEnvelope` rather than throwing — including for a non-JSON
+tool response (`SCHEMA_MISMATCH`) and an unset `MCP_SERVER_URL` (`MCP_NOT_CONFIGURED`).
+
 ### The `search_cars` tool
 
-Input schema — 14 Zod fields (`mcp-server/tools/search-cars.ts:28-62`). Only three are required:
+Input schema — 14 Zod fields. Only three are required:
 
 | Field | Type | Req. | Notes |
 |---|---|:--:|---|
@@ -306,43 +335,51 @@ Input schema — 14 Zod fields (`mcp-server/tools/search-cars.ts:28-62`). Only t
 | `isRefinement` | `boolean` | | *"Injected by route handler — not filled by Claude"* |
 | `userEmail` | `string \| null` | | *"Injected by route handler — not filled by Claude"* |
 
-The last two are in the schema the model sees but are described as route-injected. The route does
-in fact overwrite them (`app/api/chat/route.ts:129`), so a model-supplied value is discarded.
+The last two are in the schema the model sees but are described as route-injected. They must stay
+in the Zod schema — the SDK strips keys absent from it — and the route overwrites whatever the
+model supplies, so a model-provided value is always discarded.
 
-**Allowed enum members**, enforced by `validateSearchFilters` (`mcp-server/tools/search-cars.ts:6-26`):
+**Allowed enum members**, enforced by `validateSearchFilters`. These are deliberately narrowed to
+exactly what the n8n Data Store can hold, so an unmatchable filter fails loudly instead of
+returning a silent zero-result search:
 
-- body types — `hatchback saloon estate suv crossover mpv coupe convertible any`
-- fuel types — `petrol diesel hybrid mild-hybrid plugin-hybrid electric any`
+- body types — `hatchback saloon estate suv coupe any`
+- fuel types — `petrol diesel hybrid electric any`
 - displacements — `1.0 1.2 1.4 1.5 1.6 1.8 2.0 2.5 3.0 any`
 
-Validation (`mcp-server/tools/search-cars.ts:81-149`) collects *all* errors before returning: `budgetMax > 0`,
-enum membership, years integral within `[1900, currentYear + 1]`, `yearMin <= yearMax`,
-`minSeats` integer `>= 1`, non-empty feature names. This is the layer spec 009 introduced — the
-whole reason the MCP server exists is to stop malformed model output from reaching n8n.
+Validation collects *all* errors before returning: `budgetMax > 0`, enum membership, years
+integral within `[1900, currentYear + 1]`, `yearMin <= yearMax`, `minSeats` integer `>= 1`,
+non-empty feature names. Enum failures name the allowed values in the message so the model can
+self-correct. This is the layer spec 009 introduced — the whole reason the MCP server exists is
+to stop malformed model output from reaching n8n.
 
-**Execution** (`mcp-server/tools/search-cars.ts:151-265`): log a filter summary → validate → read
-`N8N_WEBHOOK_CAR_SEARCH_URL` → build a `CarSearchPayload` with `?? null` / `?? ['any']` defaults
-→ POST with `AbortSignal.timeout(5000)` and an optional `Authorization: Bearer` header →
-normalize.
+**Execution**: log a filter summary → validate → read `N8N_WEBHOOK_CAR_SEARCH_URL` → build a
+`CarSearchPayload` with `?? null` / `?? ['any']` defaults → POST with `AbortSignal.timeout(5000)`
+and an optional `Authorization: Bearer` header → normalize.
 
-**Normalization** (`mcp-server/tools/search-cars.ts:267-334`) is defensive at the top level: non-object bodies and
-a missing `results` array become `SCHEMA_MISMATCH`, and individual items missing a string `make`,
-string `model`, or numeric `year` are **dropped with a warning** rather than failing the request.
+**Normalization** is defensive throughout: non-object bodies and a missing `results` array become
+`SCHEMA_MISMATCH`; individual items missing a string `make`, string `model`, or numeric `year` are
+**dropped with a warning** rather than failing the request; and every optional field
+(`mileage`, `features`, `fuelType`, `seatCount`, `transmission`, `imageUrl`, `bodyType`, `price`,
+`sourceUrl`) is `typeof`/`Array.isArray` guarded, so a field n8n omits arrives as `null` (or `[]`
+for `features`) rather than `undefined`. The synthesized `id` is
+`` `${make}-${model}-${year}-${index}` ``, so duplicate listings still get distinct React keys.
 `totalCount` falls back to `results.length` when absent — so `totalCount` can legitimately exceed
 `results.length` when n8n reports a larger total than it returns.
 
-**Error envelope** (`lib/types/mcp.ts:24-28`), discriminated by `isErrorEnvelope`:
+**Error envelope** (`lib/types/mcp.ts`), discriminated by `isErrorEnvelope`:
 
 | `code` | Cause |
 |---|---|
 | `VALIDATION_ERROR` | filters failed `validateSearchFilters` |
+| `MCP_NOT_CONFIGURED` | `MCP_SERVER_URL` unset (raised by the Next.js-side client) |
 | `N8N_UNREACHABLE` | webhook URL unset, or network error |
 | `TIMEOUT` | n8n exceeded 5 seconds |
 | `N8N_ERROR` | n8n returned non-2xx |
-| `SCHEMA_MISMATCH` | body not JSON, not an object, or no `results` array |
+| `SCHEMA_MISMATCH` | body not JSON, not an object, no `results` array, or a non-JSON MCP tool response |
 
-The route maps any envelope to `WebhookEvent { status: 'failed', errorMessage, retryPayload }`
-(`app/api/chat/route.ts:130-136`), so all five codes surface to the user as one retryable error.
+The route maps any envelope to `WebhookEvent { status: 'failed', errorMessage, retryPayload }`,
+so all six codes surface to the user as one retryable error.
 
 ---
 
@@ -350,26 +387,29 @@ The route maps any envelope to `WebhookEvent { status: 'failed', errorMessage, r
 
 Workflow name **"Car Search Logger"**, webhook path `/webhook/car-search`.
 
-> **Caveat:** the only workflow JSON committed to the repo is spec 003's two-node skeleton
-> (`specs/003-n8n-integration/car-search-workflow.json`, still `responseMode: onReceived`).
-> Everything below is reconstructed from the plans of specs 005, 007, and 008. The live graph
-> exists only inside the `n8n_data` Docker volume. See gap 3 in §13.
+The live graph is committed at **`n8n/car-search-workflow.json`** (exported from the running
+instance). `n8n/README.md` covers importing it after a volume reset and the two things an export
+cannot carry — the SMTP credential and the `car_listings` Data Store rows.
 
 ```mermaid
 flowchart LR
     W["Webhook<br/>POST /car-search<br/>responseMode: responseNode"]
-    G["n8n Data Store<br/>Get Many car_listings"]
+    G["Data Store<br/>Get Car Listings"]
     F["Code<br/>Filter Listings<br/>AND logic over criteria"]
     L["Set<br/>Log Results<br/>matchCount and listings"]
-    I{"IF<br/>results.length > 0"}
+    M["Code<br/>Map Search Results<br/>row shape to VehicleResult"]
+    I{"IF<br/>Check Has Results"}
+    V{"IF<br/>Validate User Email"}
     B["Code<br/>Build Email HTML"]
-    S["Send Email<br/>emailSend v2.1, SMTP<br/>continueOnFail"]
+    S["Send Results Email<br/>emailSend v2.1, SMTP"]
     WARN["Set<br/>Record Email Warning"]
-    NOOP["NoOp<br/>Skip Email"]
+    NOOP["NoOp<br/>No Results - Skip Email"]
     RESP["Respond to Webhook<br/>status, results, totalCount"]
 
-    W --> G --> F --> L --> I
-    I -->|true| B --> S
+    W --> G --> F --> L --> M --> I
+    I -->|true| V
+    V -->|valid email| B --> S
+    V -->|no/invalid email| WARN
     S -->|ok| RESP
     S -->|error| WARN --> RESP
     I -->|false| NOOP --> RESP
@@ -378,15 +418,20 @@ flowchart LR
 | Node | Type | Role |
 |---|---|---|
 | Webhook | `n8n-nodes-base.webhook` v2 | entry; `responseMode: responseNode` so the caller gets a body back (changed from `onReceived` in spec 008) |
-| Data Store Get Many | `n8n-nodes-base.n8nTable` | reads **all** `car_listings` rows; no read-time filter |
+| Get Car Listings | `n8n-nodes-base.dataTable` v1.1 | `returnAll: true` — reads **all** `car_listings` rows; no read-time filter |
 | Code: Filter Listings | `n8n-nodes-base.code` v2 | AND-logic filter; `"any"` / `[]` criteria are no-ops; only **mandatory** features are enforced |
-| Set: Log Results | `n8n-nodes-base.set` | surfaces `matchCount` + `listings` in the execution view |
-| IF: Check Has Results | `n8n-nodes-base.if` | branches on `results.length > 0` |
+| Set: Log Results | `n8n-nodes-base.set` v3.5 | surfaces `matchCount`, `listings`, `searchCriteria`, `noResults` in the execution view |
+| Code: Map Search Results | `n8n-nodes-base.code` v2 | maps Data Store rows to the `VehicleResult` field names the app expects (`source` → `sourceUrl`) and computes `totalCount` |
+| IF: Check Has Results | `n8n-nodes-base.if` v2.3 | branches on `matchCount > 0` |
+| IF: Validate User Email | `n8n-nodes-base.if` v2.3 | regex-checks `body.userEmail` before attempting delivery |
 | Code: Build Email HTML | `n8n-nodes-base.code` v2 | table-based XHTML email: criteria summary + one card per listing |
-| Send Email | `n8n-nodes-base.emailSend` v2.1 | subject `"Your car matches: N result(s) found"`; `continueOnFail: true` so delivery failure never fails the search |
-| Set: Record Email Warning | `n8n-nodes-base.set` | error branch of Send Email |
-| NoOp | `n8n-nodes-base.noOp` | false branch; skip email |
-| Respond to Webhook | `n8n-nodes-base.respondToWebhook` | terminal; returns `{ status, results, totalCount }` |
+| Send Results Email | `n8n-nodes-base.emailSend` v2.1 | subject `"Your car matches: N result(s) found"`; `onError: continueErrorOutput` so delivery failure never fails the search |
+| Set: Record Email Warning | `n8n-nodes-base.set` v3.5 | reached from either a missing/invalid address or a send failure |
+| NoOp: No Results - Skip Email | `n8n-nodes-base.noOp` | false branch of Check Has Results |
+| Respond to Webhook | `n8n-nodes-base.respondToWebhook` v1.5 | terminal; returns `{ status, results, totalCount }` from Map Search Results |
+
+`Log Query` (`n8n-nodes-base.code`) is also present in the workflow but **unconnected** — a spec
+003 leftover that never executes. It is preserved in the export for fidelity; see `n8n/README.md`.
 
 ### The "database"
 
@@ -399,9 +444,10 @@ colour, condition, features` (JSON string array)`, source`. Enums: `fuelType ∈
 hybrid, electric}`, `bodyType ∈ {hatchback, suv, saloon, estate, coupe}`,
 `transmission ∈ {manual, automatic}`, `condition ∈ {new, used}`.
 
-Note the Data Store's fuel and body enums are **narrower** than the MCP tool's accepted values —
-`crossover`, `mpv`, `convertible`, `mild-hybrid`, and `plugin-hybrid` pass MCP validation but can
-never match a row.
+The MCP tool's accepted `bodyTypes` / `fuelTypes` are kept **equal** to these Data Store enums
+(§6), so every value that passes validation is one the store can actually match. Adding a body or
+fuel type therefore means changing both the Data Store rows and `KNOWN_BODY_TYPES` /
+`KNOWN_FUEL_TYPES` in `mcp-server/tools/search-cars.ts`.
 
 ---
 
@@ -423,7 +469,7 @@ erDiagram
     ChatRequestBody {
         MessageParam_array messages
         boolean isRefinement
-        number roundCount
+        WizardAnswers wizardAnswers
         string userEmail
     }
     SearchFilters {
@@ -498,24 +544,21 @@ Where each type lives, and the boundary it crosses:
 
 | Type | File | Crosses |
 |---|---|---|
-| `WizardAnswers`, `Message`, `MessageParam`, `ChatRequestBody`, `ChatErrorType` | `lib/types/chat.ts` | browser ↔ route |
-| `SearchFilters`, `VehicleResult` | `mcp-server/types.ts` | **imported by the Next.js side** (`lib/mcp/client.ts:4`) — this file crosses the process boundary |
-| `CarSearchPayload`, `SearchResultItem`, `WebhookEvent`, `FeatureEntry`, `WebhookResult`, `TriggerLogEntry` | `lib/types/n8n.ts` | route ↔ MCP ↔ n8n ↔ browser |
-| `NormalizedResponse`, `ErrorEnvelope`, `isErrorEnvelope`, `normalizeSearchResultItem` | `lib/types/mcp.ts` | MCP ↔ route |
+| `WizardAnswers`, `Message`, `MessageParam`, `MessageRole`, `SessionStatus`, `ChatErrorType`, `ChatErrorResponse` | `lib/types/chat.ts` | browser ↔ route |
+| `SearchFilters` | `mcp-server/types.ts` | **imported by the Next.js side** (`lib/mcp/client.ts`) — this file crosses the process boundary |
+| `CarSearchPayload`, `SearchResultItem`, `WebhookEvent`, `FeatureEntry`, `WebhookResult` | `lib/types/n8n.ts` | route ↔ MCP ↔ n8n ↔ browser |
+| `VehicleResult`, `NormalizedResponse`, `ErrorEnvelope`, `isErrorEnvelope` | `lib/types/mcp.ts` | MCP ↔ route |
+| `SENTINEL_WEBHOOK_EVENT`, `SENTINEL_SEARCH_STARTED` | `lib/constants/sentinels.ts` | route ↔ browser |
 
-`VehicleResult` is declared **twice** with different shapes: `mcp-server/types.ts:18-26` has 7
-fields, `lib/types/mcp.ts:3-17` has 13. The 13-field version is the one actually used; the
-`mcp-server/types.ts` copy is unreferenced.
-
-`SearchResultItem` and the 13-field `VehicleResult` are structurally identical except that
-`VehicleResult` adds a synthesized `id` of the form `` `${make}-${model}-${year}` ``.
+`SearchResultItem` and `VehicleResult` are structurally identical except that `VehicleResult` adds
+a synthesized `id` of the form `` `${make}-${model}-${year}-${index}` ``.
 
 ---
 
 ## 9. Frontend structure
 
-The entire UI is one client component. `app/page.tsx` is five lines and does nothing but render
-it; there is no server-side data fetching anywhere.
+`app/page.tsx` is five lines and does nothing but render `CarBuyingAssistant`; there is no
+server-side data fetching anywhere. Everything below the page is client-side.
 
 ```mermaid
 flowchart LR
@@ -534,54 +577,69 @@ flowchart LR
     CH -.-> S4
 ```
 
-The gate is `canContinue` (`components/NewDesign.tsx:989-993`) — steps 1 and 2 require a non-empty
-selection, steps 3 and 4 always pass. `continueFlow()` fires `sendChat('', answers)` on the
-`3 → 4` transition (`components/NewDesign.tsx:1243-1245`); the search *is* the step-5 transition.
-`maxStep` allows backward navigation only to already-visited steps.
+The gate is `canContinue` in `useWizardFlow` — steps 1 and 2 require a non-empty selection, steps
+3 and 4 always pass. `continueFlow()` in `CarBuyingAssistant` fires `sendChat('', answers)` on the
+`3 → 4` transition; the search *is* the step-5 transition. `maxStep` allows backward navigation
+only to already-visited steps.
 
-### Sub-components (all in `components/NewDesign.tsx`)
+### File layout
 
-| Component | Lines | Purpose |
-|---|---|---|
-| `Logo` | 129 | brand mark, `compact` variant |
-| `AppSidebar` | 148 | desktop step nav (`lg:flex`) + reset |
-| `MobileNav` | 222 | mobile drawer, same nav + backdrop |
-| `ChoiceCard` | 308 | animated multi-select tile |
-| `SegmentedControl` | 349 | pill picker, shared-element `layoutId` |
-| `StepOne` … `StepFour` | 380, 414, 520, 583 | the four wizard steps |
-| `DualRangeSlider` | 459 | overlaid dual range inputs for year min/max |
-| `Results` | 632 | skeletons, empty state, `items.slice(0, 5)` cards, heart-save |
-| `ChatPanel` | 777 | chat drawer; owns `draft` and the autoscroll ref |
-| `App` | 963 | default export; owns all shared state |
+| Path | Purpose |
+|---|---|
+| `components/CarBuyingAssistant.tsx` | default export; layout shell, wires the two hooks together, owns only `chatOpen` / `menuOpen` / `chatInputRef` |
+| `components/ChatPanel.tsx` | chat drawer; owns `draft` and the autoscroll ref |
+| `components/Results.tsx` | skeletons, empty state, `slice(0, MAX_DISPLAYED_RESULTS)` cards, heart-save |
+| `components/layout/AppSidebar.tsx` | desktop step nav (`lg:flex`) + reset |
+| `components/layout/MobileNav.tsx` | mobile drawer, same nav + backdrop |
+| `components/layout/StepList.tsx` | the step tracker both of the above render, via a `variant` prop |
+| `components/wizard/StepOne…StepFour.tsx` | the four wizard steps |
+| `components/wizard/types.ts` | the shared `StepProps` contract |
+| `components/ui/Logo.tsx` | brand mark, `compact` variant |
+| `components/ui/ChoiceCard.tsx` | animated multi-select tile |
+| `components/ui/SegmentedControl.tsx` | pill picker, shared-element `layoutId` |
+| `components/ui/DualRangeSlider.tsx` | overlaid dual range inputs for year min/max |
+| `hooks/useWizardFlow.ts` | step/answer state and navigation |
+| `hooks/useConversation.ts` | streaming, the sentinel protocol, search results, retry |
+| `lib/wizard/config.ts` | step copy, option lists, initial state, limits, error copy |
+
+Nothing under `components/ui/` or `components/wizard/` touches conversation state, so each is
+testable and reusable in isolation.
 
 ### State
 
-All shared state is in `App` — 18 `useState` hooks plus 3 refs, no reducer, no context, no store:
+State is split across the two hooks; there is still no reducer, context, or store.
 
-- **Navigation** — `currentStep`, `maxStep`, `chatOpen`, `menuOpen`
-- **Form** — `answers` (a `WizardAnswers`), `submittedWizardAnswers` (snapshot at submit time, so
-  later refinements still carry the original profile)
-- **Conversation** — `messages`, `isStreaming`, `streamingContent`, `error`, `sessionStatus`,
-  `roundCount`, `isRefinement`
-- **Search** — `webhookError`, `isSearching`, `searchResults`, `totalResultCount`, `userEmail`
-- **Refs** — `chatInputRef`, `abortControllerRef` (cancels the in-flight `/api/chat` fetch on
-  reset), `retryPayloadRef` (holds the failed `CarSearchPayload`)
+**`useWizardFlow`** — `currentStep`, `maxStep`, `answers`, plus `mainScrollRef` for the
+scroll-to-top on advance. Exposes `canContinue`, `goToStep`, `goBack`, `advance`,
+`jumpToResults`, `resetWizard`.
 
-There is exactly **one `useEffect` in the whole file** — autoscroll inside `ChatPanel`
-(`components/NewDesign.tsx:807-809`). Everything else is event-driven. `isStreaming` and `isSearching`
-combine into `resultsLoading` (`components/NewDesign.tsx:1253`) to drive the skeleton cards.
+**`useConversation`** — `messages`, `isStreaming`, `streamingContent`, `sessionStatus`,
+`isRefinement`, `submittedWizardAnswers` (snapshot at submit time, so later refinements still
+carry the original profile), `webhookError`, `isSearching`, `searchResults`, `totalResultCount`,
+`userEmail`, plus `abortControllerRef` (cancels the in-flight `/api/chat` fetch on reset) and
+`retryPayloadRef` (holds the failed `CarSearchPayload`). Exposes `sendChat`, `retryWebhook`,
+`resetConversation`.
 
-Notably, the wizard-triggered message is **synthetic**: the string
-`'Find me the best matching cars based on my profile.'` is appended to the outgoing API messages
-but never stored in `messages` (`components/NewDesign.tsx:1021-1023, 1061-1068`), so it never appears in the
-chat transcript. Conversation history sent upstream is capped at the last 20 messages with
+**How they compose without a cycle.** `useWizardFlow` has no knowledge of the conversation.
+`useConversation` takes two callbacks — `onSearchResolved` (wired to `jumpToResults`) and
+`onUserSend` (wired to opening the chat panel) — so the dependency runs one way only. The
+orchestrator defines `continueFlow` and `resetFlow` by composing both hooks.
+
+There is exactly **one `useEffect` in the whole tree** — autoscroll inside `ChatPanel`. Everything
+else is event-driven. `isStreaming` and `isSearching` combine into `resultsLoading` to drive the
+skeleton cards.
+
+Notably, the wizard-triggered message is **synthetic**: `WIZARD_TRIGGER_MESSAGE` is appended to
+the outgoing API messages but never stored in `messages`, so it never appears in the chat
+transcript. Conversation history sent upstream is capped at `MAX_HISTORY_MESSAGES` (20) with
 result-bearing messages filtered out.
 
 ### Styling
 
-Tailwind v4 via `@import "tailwindcss"` in `components/newdesign.css`, imported globally from
-`app/layout.tsx`. PostCSS uses only `@tailwindcss/postcss`. Animation is `framer-motion`, icons
-are `lucide-react`. `app/page.module.css` is orphaned.
+Tailwind v4 via `@import "tailwindcss"` in `app/globals.css`, imported from `app/layout.tsx`.
+PostCSS uses only `@tailwindcss/postcss` (a devDependency). Animation is `framer-motion`, icons
+are `lucide-react`. The two custom slider classes (`.budget-slider`, `.year-range-thumb`) live in
+`globals.css` because range-input pseudo-elements cannot be expressed as utilities.
 
 ---
 
@@ -589,16 +647,19 @@ are `lucide-react`. `app/page.module.css` is orphaned.
 
 | Variable | Read by | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `app/api/chat/route.ts:7` | Anthropic SDK auth |
-| `MCP_SERVER_URL` | `lib/mcp/client.ts:13,35` | where Next.js reaches MCP, e.g. `http://localhost:3001/mcp` |
-| `MCP_SERVER_PORT` | `mcp-server/index.ts:6` | MCP bind port, default `3001` |
-| `N8N_WEBHOOK_CAR_SEARCH_URL` | `mcp-server/tools/search-cars.ts:175`, `app/api/webhook-retry/route.ts:5` | n8n webhook endpoint |
-| `N8N_WEBHOOK_AUTH_TOKEN` | `mcp-server/tools/search-cars.ts:205` | optional `Bearer` token — **MCP path only** |
+| `ANTHROPIC_API_KEY` | `app/api/chat/route.ts` | Anthropic SDK auth |
+| `MCP_SERVER_URL` | `lib/mcp/client.ts` | where Next.js reaches MCP, e.g. `http://localhost:3001/mcp` |
+| `MCP_SERVER_PORT` | `mcp-server/index.ts` | MCP bind port, default `3001` |
+| `N8N_WEBHOOK_CAR_SEARCH_URL` | `mcp-server/tools/search-cars.ts` | n8n webhook endpoint |
+| `N8N_WEBHOOK_AUTH_TOKEN` | `mcp-server/tools/search-cars.ts` | optional `Bearer` token |
 
 `.env.local` defines all five. In Compose, `mcp-server` receives `MCP_SERVER_PORT=3001` and
 `N8N_WEBHOOK_CAR_SEARCH_URL=http://n8n:5678/webhook/car-search` — the n8n **service hostname**,
 not `localhost`. No `N8N_WEBHOOK_AUTH_TOKEN` is passed in Compose, so containerized runs send
-unauthenticated webhook requests.
+unauthenticated webhook requests unless you add it to the `mcp-server` environment block.
+
+Both paths to n8n now run through the MCP server, so `N8N_WEBHOOK_CAR_SEARCH_URL` only needs to be
+reachable from the MCP process.
 
 No `NEXT_PUBLIC_*` variables exist; no secret reaches the browser.
 
@@ -622,11 +683,12 @@ The repo uses Spec-Kit: `specs/NNN-name/{spec,plan,data-model,research,tasks}.md
 | 009 | `mcp-vehicle-search` | **insert MCP as a validation boundary** between model and n8n; `search_cars` |
 | 010 | `new-design-live-integration` | replace the chat-first page with the five-step wizard; feed `wizardAnswers` into `/api/chat` |
 | 011 | `mcp-canonical-tool-layer` | route fetches tool schemas via `listTools()` each request — **MCP registry becomes the single source of truth** |
+| 012 | `codebase-cleanup` | fix the §13 gaps: split the 1421-line monolith into components + hooks, guard every `JSON.parse`, route the retry through MCP, version-control the n8n workflow, delete dead code |
 
 The through-line is progressive tightening of the model's authority: from "the model chats and we
 fire a webhook every turn" (003) → "the model emits one structured payload" (004) → "a separate
 process validates that payload before anything downstream sees it" (009) → "that process also
-owns the schema the model is shown" (011).
+owns the schema the model is shown" (011) → "that boundary is the *only* way to reach n8n" (012).
 
 ---
 
@@ -657,64 +719,42 @@ checklist rather than a test command.
 
 ## 13. Known gaps and drift
 
-Observations from reading the code, not a work order.
+Observations from reading the code, not a work order. The thirteen gaps previously listed here
+were all closed by spec 012; what follows is what remains.
 
-1. **The MCP server binds loopback, so its published Docker port cannot work.**
-   `mcp-server/index.ts:44` is `httpServer.listen(PORT, '127.0.0.1')`, while
-   `docker-compose.yml` publishes `3001:3001`. Docker's proxy connects to the *container's* IP,
-   not the container's loopback, so nothing can reach the process through the published port.
-   Local `npm run dev:mcp` works fine, which is why this stays hidden. Binding `0.0.0.0` would
-   fix it.
+1. **`Log Query` is an orphan node in the n8n workflow.** A spec 003 leftover, unconnected and
+   never executed. It is preserved in `n8n/car-search-workflow.json` so an import reproduces the
+   live graph exactly. Deleting it in the UI and re-exporting is the fix.
 
-2. **Two divergent paths to n8n.** `/api/chat` goes through MCP: validated, 5-second timeout,
-   optional Bearer auth. `/api/webhook-retry` calls `fireWebhookWithRetry` directly: unvalidated,
-   30-second timeout, 2 attempts, **no auth header** (`lib/n8n/trigger.ts:18-24`). A retry
-   therefore does not exercise the same code path as the original request, which cuts against
-   spec 009's premise that MCP is *the* boundary to n8n.
+2. **Spec 007 T001 is still unchecked.** The SMTP credential must be created by hand in the n8n
+   UI; nothing in the repo can carry it. Until it exists, `Send Results Email` fails and the
+   workflow routes through `Record Email Warning` — searches still succeed, emails silently do
+   not arrive. See `n8n/README.md`.
 
-3. **The live n8n workflow is not version-controlled.** Only spec 003's two-node skeleton is
-   committed. The Data Store node, filter Code node, IF branch, email nodes, and Respond to
-   Webhook — everything specs 005–008 added — exist solely in the `n8n_data` Docker volume.
-   Losing the volume loses the workflow, and there is no exported JSON to restore from.
+3. **`endTrigger` is carried but never acted on.** The model picks one of five values, it
+   round-trips through `CarSearchPayload` into `WebhookEvent`, and nothing branches on it. It is
+   provenance metadata for a decision the code does not yet make.
 
-4. **A retry discards the results it fetched.** `/api/webhook-retry` returns
-   `{ status, results, totalCount }`, but `retryWebhook()` (`components/NewDesign.tsx:1218-1222`) only sets
-   `sessionStatus = 'concluded'` on success — it never calls `setSearchResults`. A successful
-   retry clears the error without showing any cars.
+4. **`totalCount` can exceed `results.length` legitimately** (§6), and the UI's overflow copy
+   assumes the difference means "more matches are in the email". If n8n ever returns a capped
+   `results` array *without* sending an email, that copy would be wrong. Today n8n returns every
+   match, so the two agree.
 
-5. **`roundCount` is dead over the wire.** The client sends it (`components/NewDesign.tsx:1077`) and
-   `ChatRequestBody` declares it, but `app/api/chat/route.ts:58-62` never reads it. The client still
-   increments it locally.
+5. **`usageContext`, `annualMileage`, and `engineDisplacements` reach n8n but are not filtered
+   on.** The `Filter Listings` Code node reads `budgetMin`/`budgetMax`, `bodyTypes`, `fuelTypes`,
+   `transmission`, `minSeats`, and mandatory `features` only. The three unused fields pass
+   validation, appear in the payload, and are ignored — so a user constraint the model faithfully
+   captured has no effect on results.
 
-6. **`ConversationState.consecutiveRefusals`** (`lib/types/chat.ts`) has no corresponding
-   `useState` and is never tracked. `ConversationState` and `ChatInterfaceProps` as a whole are
-   unused leftovers — the real state lives as individual hooks in `App`.
+6. **The MCP server has no request size limit.** `req.on('data')` accumulates chunks with no
+   ceiling. Low risk for a loopback-adjacent internal service, but unbounded.
 
-7. **`VehicleResult` is defined twice.** `mcp-server/types.ts:18-26` (7 fields) is dead;
-   `lib/types/mcp.ts:3-17` (13 fields) is live.
+7. **No `lint` script and no linter.** `npm run typecheck` and `npm run build` are the gate;
+   there is no ESLint config, so Constitution I's formatting rules rest on review alone.
 
-8. **`normalizeN8nResponse` guards only three fields.** `make`, `model`, and `year` get `typeof`
-   checks; `bodyType`, `price`, and `sourceUrl` get guarded casts; but `mileage`, `features`,
-   `fuelType`, `seatCount`, `transmission`, and `imageUrl` are unchecked `as` casts
-   (`mcp-server/tools/search-cars.ts:316-321`). A missing field arrives as `undefined` even though the type
-   promises `string | null`, and the UI renders that gap rather than a null fallback.
-
-9. **`app/not-found.tsx`** styles reference `var(--color-*)` custom properties that
-   `components/newdesign.css` never defines — leftovers from the design system removed in spec 010.
-
-10. **Constitution I violation:** a commented-out `//console.log(result)` remains at
-    `mcp-server/tools/search-cars.ts:262`.
-
-11. **Per-request MCP connection churn.** Two connect/close cycles per chat turn (`listTools`,
-    then `callTool`), each with a fresh transport (`lib/mcp/client.ts`). Correct but adds two
-    round trips of latency; caching the schema would remove one.
-
-12. **Enum mismatch between MCP and the Data Store.** `crossover`, `mpv`, `convertible`,
-    `mild-hybrid`, and `plugin-hybrid` pass MCP validation but match no `car_listings` row (§7).
-    The user gets a silent zero-result search rather than an explanation.
-
-13. **Spec status fields are stale.** Only 007 says `Implemented`; 009, 010, and 011 still say
-    `Draft` despite their code being merged.
+8. **`lib/wizard/config.ts` couples copy to code.** Step text, option labels, and hints live in a
+   TypeScript module, so a copy change is a code change. Fine at this size; worth noting if
+   content ever needs to move.
 
 ---
 
@@ -722,36 +762,61 @@ Observations from reading the code, not a work order.
 
 Automated tests are forbidden by constitution principle V, so verification is manual.
 
+**Static gate** (run before anything else — both must be clean)
+
+```bash
+npm run typecheck
+npm run build
+```
+
 **Startup**
 
 ```bash
-docker compose up -d          # n8n on :5678
-npm run dev:mcp               # MCP server on :3001 — use this, not the Compose one (gap 1)
+docker compose up -d          # n8n on :5678, then mcp-server once n8n is healthy
+npm run dev:mcp               # or run the MCP server on the host instead
 npm run dev                   # Next.js on :3000
 ```
+
+Either MCP server works now that the process binds `0.0.0.0`. To confirm the containerized one is
+reachable: `curl -s -o /dev/null -w '%{http_code}' localhost:3001/mcp` should return `400`
+(malformed body rejected), not a connection refusal.
 
 **End-to-end happy path**
 
 1. Open `http://localhost:3000`, complete steps 1–4, click through to step 5.
-2. Watch the MCP server log: expect `[mcp] → tools/list`, then
-   `[mcp] → tools/call (search_cars)`, then `[search_cars] invoked — …` with a filter summary,
-   then `[search_cars] ✓ N result(s) returned`.
+2. Watch the MCP server log: expect `[mcp] → tools/list` on the first request only (the schema is
+   then cached for 60 s), `[mcp] → tools/call (search_cars)`, `[search_cars] invoked — …` with a
+   filter summary, then `[search_cars] ✓ N result(s) returned`.
 3. In the browser Network tab, inspect the `/api/chat` response as raw text. Confirm the frame
    order from §5: prose, `__SEARCH_STARTED__`, then `__WEBHOOK_EVENT__` with a JSON tail.
-4. Confirm the UI shows skeleton cards during the gap, then up to 5 result cards.
+4. Confirm the UI shows skeleton cards during the gap, then up to 5 result cards, and that the
+   spec line under each title reads `suv · petrol / hybrid · automatic · 5 seats` — fuel types
+   joined with ` / `, never a bare comma-separated array.
 5. Check the n8n execution log for `matchCount`, and the inbox for the result email if an email
    was supplied.
+6. Send a follow-up in the chat panel ("only hybrids") and confirm the results refresh in place.
 
 **Failure paths**
 
 - Stop the MCP server and send a chat message → expect HTTP 502 and the `api_error` copy.
-- Stop n8n and search → expect `N8N_UNREACHABLE`, surfaced as `webhookError` with a retry option.
-- Send an out-of-enum body type → expect `VALIDATION_ERROR` with per-field `details`.
+- Stop n8n and search → expect `N8N_UNREACHABLE`, surfaced as `webhookError` with a retry button.
+  Restart n8n, click **Try again**, and confirm **result cards now appear** — the retry commits
+  its results rather than just clearing the error.
+- Send an out-of-enum body type (e.g. ask for a convertible) → expect `VALIDATION_ERROR` whose
+  `details` name the allowed values.
+- `curl -X POST localhost:3000/api/chat -d '{}' -H 'Content-Type: application/json'` → expect
+  **400**, not 500.
+- Break `ANTHROPIC_API_KEY` and send a message → expect **HTTP 200** whose body is
+  `__WEBHOOK_EVENT__{"status":"failed",…}`, and the error copy in the chat panel. A 500 here means
+  a mid-stream throw escaped again (§5).
+- `curl -X POST localhost:3001/mcp -d 'not json' -H 'Content-Type: application/json'` → expect
+  **400** and the MCP process still alive.
 
 **Responsive check (constitution III)** — verify at 320px, 768px, and 1280px: the sidebar
 switches to `MobileNav` below `lg`, no horizontal scroll appears, and touch targets stay ≥44px.
+Also load `/some-missing-path` and confirm the 404 page renders styled.
 
-**Document maintenance** — the numbers here (ports, timeouts, model id, sentinel literals, line
-references) are the parts most likely to rot. When touching `app/api/chat/route.ts`,
-`lib/mcp/client.ts`, `mcp-server/index.ts`, or `docker-compose.yml`, re-check §3, §5, §6, and
-§10.
+**Document maintenance** — ports, timeouts, model id, sentinel names, and the n8n node graph are
+the parts most likely to rot. When touching `app/api/chat/route.ts`, `lib/mcp/client.ts`,
+`mcp-server/index.ts`, or `docker-compose.yml`, re-check §3, §5, §6, and §10. When editing the
+workflow in the n8n UI, re-export to `n8n/car-search-workflow.json` and re-check §7.
