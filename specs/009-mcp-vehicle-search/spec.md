@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-11
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "I want to add a custom MCP server as the structured vehicle search layer between the agent and n8n. Route all vehicle search requests from the agent through the MCP server instead of calling n8n directly. I imagine the flow as: agent → MCP → n8n → MCP → agent. Expose a search_cars(filters) MCP tool that the agent can call for structured vehicle search, ensure the MCP server is designed to support additional future tools. Validate incoming search parameters in the MCP server before forwarding requests to n8n. Forward validated search requests from the MCP server to the local n8n workflow via webhook. Keep n8n responsible for querying the mock database and applying search and filtering logic. Return n8n results to the MCP server and normalize them into a consistent response format for the agent."
 

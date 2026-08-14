@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-07
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "I want to show some feedbacks for the user after a search is executed. Currently an email notification is sent if results were found, but the chat window doesn't reflect anything."
 

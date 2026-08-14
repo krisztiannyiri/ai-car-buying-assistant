@@ -3,6 +3,7 @@ import type { MessageParam, ChatErrorType, WizardAnswers } from '@/lib/types/cha
 import type { CarSearchPayload, WebhookEvent } from '@/lib/types/n8n';
 import { callSearchCars, fetchMcpToolSchemas } from '@/lib/mcp/client';
 import { isErrorEnvelope } from '@/lib/types/mcp';
+import { SENTINEL_SEARCH_STARTED, SENTINEL_WEBHOOK_EVENT } from '@/lib/constants/sentinels';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -48,6 +49,37 @@ The user has seen results and wants to adjust. Write one short sentence confirmi
 }
 
 
+/**
+ * Maps an upstream failure to the HTTP status and user-facing copy for it. Shared
+ * by the pre-stream path (which can still set a status code) and the mid-stream
+ * path (which can only write into an already-open 200 response).
+ */
+function describeUpstreamError(error: unknown): {
+  status: number;
+  type: ChatErrorType;
+  message: string;
+} {
+  if (error instanceof Anthropic.RateLimitError) {
+    return {
+      status: 429,
+      type: 'rate_limit',
+      message: 'Too many requests — please wait a moment and try again',
+    };
+  }
+  if (error instanceof Anthropic.APIConnectionError || error instanceof TypeError) {
+    return {
+      status: 503,
+      type: 'connection',
+      message: "Couldn't reach the AI service — check your connection and retry",
+    };
+  }
+  return {
+    status: 502,
+    type: 'api_error',
+    message: 'The AI service returned an error — please try again',
+  };
+}
+
 export async function POST(request: Request): Promise<Response> {
   let messages: MessageParam[];
   let isRefinement: boolean;
@@ -68,7 +100,7 @@ export async function POST(request: Request): Promise<Response> {
             message: 'Something went wrong — please try again',
           },
         },
-        { status: 500 }
+        { status: 400 }
       );
     }
   } catch {
@@ -79,7 +111,7 @@ export async function POST(request: Request): Promise<Response> {
           message: 'Something went wrong — please try again',
         },
       },
-      { status: 500 }
+      { status: 400 }
     );
   }
 
@@ -90,61 +122,29 @@ export async function POST(request: Request): Promise<Response> {
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        const messageStream = client.messages.stream({
-          model: 'claude-haiku-4-5',
-          system: systemPrompt,
-          max_tokens: 1500,
-          messages,
-          tools,
-          tool_choice: { type: 'auto' },
-        });
 
-        let toolUseActive = false;
-        let toolUseName = '';
-        let toolUseInputJson = '';
-
-        for await (const event of messageStream) {
-          if (event.type === 'content_block_start') {
-            if (event.content_block.type === 'tool_use') {
-              toolUseActive = true;
-              toolUseName = event.content_block.name;
-              toolUseInputJson = '';
-            }
-          } else if (event.type === 'content_block_delta') {
-            if (event.delta.type === 'text_delta') {
-              controller.enqueue(encoder.encode(event.delta.text));
-            } else if (event.delta.type === 'input_json_delta' && toolUseActive) {
-              toolUseInputJson += event.delta.partial_json;
-            }
-          } else if (event.type === 'content_block_stop' && toolUseActive) {
-            toolUseActive = false;
-            if (toolUseName === 'search_cars') {
-              const toolInput = JSON.parse(toolUseInputJson) as Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
-              const retryPayload: CarSearchPayload = {
-                ...toolInput,
-                isRefinement,
-                userEmail,
-              };
-              controller.enqueue(encoder.encode('\n\n__SEARCH_STARTED__'));
-              const mcpResult = await callSearchCars({ ...toolInput, isRefinement, userEmail });
-              const webhookEvent: WebhookEvent = isErrorEnvelope(mcpResult)
-                ? {
-                    status: 'failed',
-                    endTrigger: toolInput.endTrigger,
-                    errorMessage: mcpResult.message,
-                    retryPayload,
-                  }
-                : {
-                    status: 'success',
-                    endTrigger: toolInput.endTrigger,
-                    results: mcpResult.results,
-                    totalCount: mcpResult.totalCount,
-                  };
-              controller.enqueue(
-                encoder.encode('\n\n__WEBHOOK_EVENT__' + JSON.stringify(webhookEvent))
-              );
-            }
-          }
+        // Everything below runs after the 200 has been committed, so a throw here
+        // cannot become an HTTP error status — it must be reported inside the
+        // stream, or the client waits forever. Errors thrown from start() do NOT
+        // reach the enclosing try/catch.
+        try {
+          await streamConversation(controller, encoder, systemPrompt, messages, tools, {
+            isRefinement,
+            userEmail,
+          });
+        } catch (error) {
+          const { message } = describeUpstreamError(error);
+          console.error('[chat] stream failed:', error);
+          controller.enqueue(
+            encoder.encode(
+              SENTINEL_WEBHOOK_EVENT +
+                JSON.stringify({
+                  status: 'failed',
+                  endTrigger: 'unknown',
+                  errorMessage: message,
+                } satisfies WebhookEvent)
+            )
+          );
         }
         controller.close();
       },
@@ -154,28 +154,92 @@ export async function POST(request: Request): Promise<Response> {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   } catch (error) {
-    let status: number;
-    let type: ChatErrorType;
-    let message: string;
-
-    if (error instanceof Anthropic.RateLimitError) {
-      status = 429;
-      type = 'rate_limit';
-      message = 'Too many requests — please wait a moment and try again';
-    } else if (error instanceof Anthropic.APIConnectionError || error instanceof TypeError) {
-      status = 503;
-      type = 'connection';
-      message = "Couldn't reach the AI service — check your connection and retry";
-    } else if (error instanceof Anthropic.APIError) {
-      status = 502;
-      type = 'api_error';
-      message = 'The AI service returned an error — please try again';
-    } else {
-      status = 502;
-      type = 'api_error';
-      message = 'The AI service returned an error — please try again';
-    }
-
+    const { status, type, message } = describeUpstreamError(error);
     return Response.json({ error: { type, message } }, { status });
+  }
+}
+
+/**
+ * Drives one Anthropic streaming call, forwarding text verbatim and resolving a
+ * `search_cars` tool call server-side. See ARCHITECTURE.md §5 for the wire format.
+ */
+async function streamConversation(
+  controller: ReadableStreamDefaultController,
+  encoder: TextEncoder,
+  systemPrompt: string,
+  messages: MessageParam[],
+  tools: Anthropic.Tool[],
+  injected: { isRefinement: boolean; userEmail: string | null }
+): Promise<void> {
+  const { isRefinement, userEmail } = injected;
+  const messageStream = client.messages.stream({
+    model: 'claude-haiku-4-5',
+    system: systemPrompt,
+    max_tokens: 1500,
+    messages,
+    tools,
+    tool_choice: { type: 'auto' },
+  });
+
+  let toolUseActive = false;
+  let toolUseName = '';
+  let toolUseInputJson = '';
+
+  for await (const event of messageStream) {
+    if (event.type === 'content_block_start') {
+      if (event.content_block.type === 'tool_use') {
+        toolUseActive = true;
+        toolUseName = event.content_block.name;
+        toolUseInputJson = '';
+      }
+    } else if (event.type === 'content_block_delta') {
+      if (event.delta.type === 'text_delta') {
+        controller.enqueue(encoder.encode(event.delta.text));
+      } else if (event.delta.type === 'input_json_delta' && toolUseActive) {
+        toolUseInputJson += event.delta.partial_json;
+      }
+    } else if (event.type === 'content_block_stop' && toolUseActive) {
+      toolUseActive = false;
+      if (toolUseName !== 'search_cars') continue;
+
+      let toolInput: Omit<CarSearchPayload, 'isRefinement' | 'userEmail'>;
+      try {
+        toolInput = JSON.parse(toolUseInputJson) as Omit<
+          CarSearchPayload,
+          'isRefinement' | 'userEmail'
+        >;
+      } catch {
+        controller.enqueue(
+          encoder.encode(
+            SENTINEL_WEBHOOK_EVENT +
+              JSON.stringify({
+                status: 'failed',
+                endTrigger: 'unknown',
+                errorMessage: 'Failed to parse search parameters from the AI response',
+              } satisfies WebhookEvent)
+          )
+        );
+        return;
+      }
+
+      const retryPayload: CarSearchPayload = { ...toolInput, isRefinement, userEmail };
+      controller.enqueue(encoder.encode(SENTINEL_SEARCH_STARTED));
+
+      const mcpResult = await callSearchCars({ ...toolInput, isRefinement, userEmail });
+      const webhookEvent: WebhookEvent = isErrorEnvelope(mcpResult)
+        ? {
+            status: 'failed',
+            endTrigger: toolInput.endTrigger,
+            errorMessage: mcpResult.message,
+            retryPayload,
+          }
+        : {
+            status: 'success',
+            endTrigger: toolInput.endTrigger,
+            results: mcpResult.results,
+            totalCount: mcpResult.totalCount,
+          };
+      controller.enqueue(encoder.encode(SENTINEL_WEBHOOK_EVENT + JSON.stringify(webhookEvent)));
+    }
   }
 }

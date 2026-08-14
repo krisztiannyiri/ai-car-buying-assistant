@@ -14,13 +14,3 @@ export interface SearchFilters {
   annualMileage?: string | null;
   endTrigger: 'explicit' | 'implicit' | 'length-limit' | 'refinement' | 'unknown';
 }
-
-export interface VehicleResult {
-  id: string;
-  make: string;
-  model: string;
-  bodyType: string | null;
-  year: number;
-  price: number | null;
-  sourceUrl: string | null;
-}

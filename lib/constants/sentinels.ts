@@ -1,0 +1,2 @@
+export const SENTINEL_WEBHOOK_EVENT = '\n\n__WEBHOOK_EVENT__';
+export const SENTINEL_SEARCH_STARTED = '\n\n__SEARCH_STARTED__';

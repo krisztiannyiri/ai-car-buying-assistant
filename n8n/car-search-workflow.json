@@ -1,0 +1,293 @@
+{
+  "name": "Car Search Logger",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "car-search",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "add43775-6717-452a-8115-9c0ff9dcdb38",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "a8a5cff0-6066-4fc5-8334-17b97e3d05fd"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { query, messageCount, timestamp } = $input.first().json;\nconsole.log(`[car-search] query=\"${query}\" messageCount=${messageCount} at ${timestamp}`);\nreturn $input.all();"
+      },
+      "id": "ce85758a-4569-4a5d-82bc-9b78d56bf05b",
+      "name": "Log Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "mj0YdKHUlNanTFsA"
+        },
+        "returnAll": true
+      },
+      "id": "951c44b1-d9b9-4db5-b345-0a82dd95abb9",
+      "name": "Get Car Listings",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [512, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('Webhook').first().json.body;\nconst listings = $input.all();\n\nconst {\n  budgetMin,\n  budgetMax,\n  bodyTypes = [],\n  fuelTypes = [],\n  transmission = 'any',\n  minSeats,\n  features = []\n} = payload;\n\nconst mandatoryFeatures = features\n  .filter(f => f.mandatory === true)\n  .map(f => f.name.toLowerCase());\n\nconst matches = listings.filter(item => {\n  const car = item.json;\n\n  if (budgetMin !== null && budgetMin !== undefined) {\n    if (car.price < budgetMin) return false;\n  }\n\n  if (budgetMax !== null && budgetMax !== undefined) {\n    if (car.price > budgetMax) return false;\n  }\n\n  const normalizedBodyTypes = bodyTypes.map(b => b.toLowerCase());\n  if (!normalizedBodyTypes.includes('any')) {\n    if (!normalizedBodyTypes.includes(car.bodyType)) return false;\n  }\n\n  const normalizedFuelTypes = fuelTypes.map(f => f.toLowerCase());\n  if (!normalizedFuelTypes.includes('any')) {\n    if (!normalizedFuelTypes.includes(car.fuelType)) return false;\n  }\n\n  if (transmission.toLowerCase() !== 'any') {\n    if (car.transmission !== transmission.toLowerCase()) return false;\n  }\n\n  if (minSeats !== null && minSeats !== undefined) {\n    if (car.seatCount < minSeats) return false;\n  }\n\n  if (mandatoryFeatures.length > 0) {\n    const carFeatures = JSON.parse(car.features || '[]').map(f => f.toLowerCase());\n    for (const req of mandatoryFeatures) {\n      if (!carFeatures.includes(req)) return false;\n    }\n  }\n\n  return true;\n});\n\nconst outputListings = matches.map(item => {\n  const car = { ...item.json };\n  car.features = JSON.parse(car.features || '[]');\n  return car;\n});\n\nreturn [{ json: { listings: outputListings } }];"
+      },
+      "id": "0290f24f-f662-425c-9947-758aee3afdcf",
+      "name": "Filter Listings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-matchCount",
+              "name": "matchCount",
+              "value": "={{ $input.first().json.listings.length }}",
+              "type": "number"
+            },
+            {
+              "id": "field-listings",
+              "name": "listings",
+              "value": "={{ $input.first().json.listings }}",
+              "type": "array"
+            },
+            {
+              "id": "field-searchCriteria",
+              "name": "searchCriteria",
+              "value": "={{ { budgetMin: $('Webhook').first().json.body.budgetMin, budgetMax: $('Webhook').first().json.body.budgetMax, bodyTypes: $('Webhook').first().json.body.bodyTypes, fuelTypes: $('Webhook').first().json.body.fuelTypes, transmission: $('Webhook').first().json.body.transmission, minSeats: $('Webhook').first().json.body.minSeats, features: $('Webhook').first().json.body.features } }}",
+              "type": "object"
+            },
+            {
+              "id": "field-noResults",
+              "name": "noResults",
+              "value": "={{ $input.first().json.listings.length === 0 }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "18c6b8b1-ef49-4770-a85e-c5a34f7d9cc4",
+      "name": "Log Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [1104, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst listings = input.listings || [];\n\nconst mappedResults = listings.map(car => ({\n  make: car.make || '',\n  model: car.model || '',\n  bodyType: car.bodyType || null,\n  year: car.year,\n  price: (car.price !== undefined && car.price !== null) ? car.price : null,\n  sourceUrl: car.source || null,\n  fuelType: car.fuelType || null,\n  mileage: car.mileage || null,\n  transmission: car.transmission || null,\n  seatCount: car.seatCount || null,\n  features: car.features || []\n}));\n\nreturn [{ json: { ...input, mappedResults, totalCount: mappedResults.length } }];"
+      },
+      "id": "dcbbea12-9c45-4ca2-bc53-ec1bf63ac1c1",
+      "name": "Map Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1280, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cond-matchcount",
+              "leftValue": "={{ $json.matchCount }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "f8f91393-cad3-437c-b100-55955afeef0f",
+      "name": "Check Has Results",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1456, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-emailvalid",
+              "leftValue": "={{ !!$('Webhook').first().json.body.userEmail && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test($('Webhook').first().json.body.userEmail) }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "rightValue": true
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b22cefae-f5a3-4698-ba17-d6d964cc3d10",
+      "name": "Validate User Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1712, -208]
+    },
+    {
+      "parameters": {},
+      "id": "3cc04c38-a748-4851-807c-d491be120a9d",
+      "name": "No Results - Skip Email",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1712, 208]
+    },
+    {
+      "parameters": {
+        "jsCode": "const logResults = $('Log Results').first().json;\nconst listings = logResults.listings || [];\nconst matchCount = logResults.matchCount || 0;\nconst searchCriteria = logResults.searchCriteria || {};\nconst to = $('Webhook').first().json.body.userEmail;\n\nfunction formatNum(n) {\n  if (n == null) return null;\n  return n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n}\n\nfunction titleCase(s) {\n  if (s == null || s === '') return null;\n  return String(s).charAt(0).toUpperCase() + String(s).slice(1).toLowerCase();\n}\n\nfunction specRow(label, val) {\n  const display = (val != null && val !== '') ? val : '<span style=\"color:#9ca3af;font-style:italic;\">Not specified</span>';\n  return `<tr><td style=\"color:#6b7280;font-size:13px;padding:3px 0;\">${label}</td><td style=\"color:#111827;font-size:13px;padding:3px 0;\">${display}</td></tr>`;\n}\n\nfunction buildCard(car) {\n  const features = Array.isArray(car.features) ? car.features : [];\n  const featuresHtml = features.length > 0\n    ? features.join(' &bull; ')\n    : '<span style=\"color:#9ca3af;font-style:italic;\">No additional features listed</span>';\n  const price = formatNum(car.price);\n  const mileage = car.mileage != null ? formatNum(car.mileage) + ' km' : null;\n  const linkHtml = car.source\n    ? `<p style=\"margin:10px 0 0;\"><a href=\"${car.source}\" style=\"color:#2563eb;font-size:13px;text-decoration:none;\">View listing &rarr;</a></p>`\n    : '';\n  return [\n    '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom:16px;border:1px solid #e5e7eb;border-radius:6px;\">',\n    '<tr>',\n    '<td width=\"4\" style=\"background-color:#2563eb;border-radius:6px 0 0 6px;\"></td>',\n    '<td style=\"padding:16px;background-color:#ffffff;\">',\n    '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr>',\n    `<td style=\"font-size:17px;font-weight:bold;color:#111827;\">${car.year || ''} ${car.make || ''} ${car.model || ''}</td>`,\n    `<td align=\"right\" style=\"font-size:17px;font-weight:bold;color:#2563eb;\">${price ? '€' + price : ''}</td>`,\n    '</tr></table>',\n    '<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-top:10px;border-top:1px solid #e5e7eb;padding-top:10px;\">',\n    specRow('Fuel', titleCase(car.fuelType)),\n    specRow('Mileage', mileage),\n    specRow('Body', titleCase(car.bodyType)),\n    specRow('Transmission', titleCase(car.transmission)),\n    specRow('Seats', car.seatCount != null ? String(car.seatCount) : null),\n    specRow('Condition', titleCase(car.condition)),\n    specRow('Colour', titleCase(car.colour)),\n    '</table>',\n    `<p style=\"margin:8px 0 0;font-size:13px;color:#6b7280;\">Features: <span style=\"color:#111827;\">${featuresHtml}</span></p>`,\n    linkHtml,\n    '</td></tr></table>'\n  ].join('');\n}\n\nfunction buildCriteria(c) {\n  const rows = [];\n  if (c.budgetMax != null) rows.push('Budget: up to €' + formatNum(c.budgetMax));\n  const bt = (c.bodyTypes || []).filter(v => v !== 'any');\n  if (bt.length) rows.push('Body types: ' + bt.join(', '));\n  const ft = (c.fuelTypes || []).filter(v => v !== 'any');\n  if (ft.length) rows.push('Fuel types: ' + ft.join(', '));\n  if (c.transmission && c.transmission !== 'any') rows.push('Transmission: ' + titleCase(c.transmission));\n  if (c.minSeats != null) rows.push('Minimum seats: ' + c.minSeats);\n  const mf = (c.features || []).filter(f => f.mandatory === true);\n  if (mf.length) rows.push('Required features: ' + mf.map(f => f.name).join(', '));\n  if (!rows.length) return '<p style=\"margin:0;color:#9ca3af;font-style:italic;font-size:14px;\">No specific criteria applied</p>';\n  return rows.map(r => `<p style=\"margin:2px 0;color:#374151;font-size:14px;\">${r}</p>`).join('');\n}\n\nconst subject = `Your car matches: ${matchCount} result(s) found`;\nconst carCards = listings.map(buildCard).join('');\nconst criteria = buildCriteria(searchCriteria);\n\nconst htmlBody = `<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"en\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n<meta name=\"x-apple-disable-message-reformatting\" />\n<title>Your Car Recommendations</title>\n</head>\n<body style=\"margin:0;padding:0;background-color:#f3f4f6;font-family:Arial,sans-serif;\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#f3f4f6;padding:24px 16px;\">\n<tr><td align=\"center\">\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;\">\n<tr><td style=\"background-color:#2563eb;padding:24px 32px;border-radius:8px 8px 0 0;\">\n<h1 style=\"margin:0;color:#ffffff;font-size:22px;font-weight:bold;\">Your Car Recommendations</h1>\n<p style=\"margin:6px 0 0;color:#bfdbfe;font-size:15px;\">${matchCount} vehicle(s) matched your criteria</p>\n</td></tr>\n<tr><td style=\"background-color:#f9fafb;padding:16px 32px;border-bottom:1px solid #e5e7eb;\">\n<p style=\"margin:0 0 8px;color:#374151;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:0.05em;\">Search Criteria</p>\n${criteria}\n</td></tr>\n<tr><td style=\"background-color:#ffffff;padding:24px 32px;\">\n${carCards}\n</td></tr>\n<tr><td style=\"background-color:#f9fafb;padding:14px 32px;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px;text-align:center;\">\n<p style=\"margin:0;color:#9ca3af;font-size:12px;\">Results generated by Car Buying Assistant</p>\n</td></tr>\n</table>\n</td></tr>\n</table>\n</body>\n</html>`;\n\nreturn [{ json: { subject, htmlBody, to } }];"
+      },
+      "id": "f6133db6-feb5-416c-8e88-50b58a86ab7e",
+      "name": "Build Email HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2064, -400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@car-buying-assistant.local",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.htmlBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "60107b55-a841-4c4e-9ba6-20bf0736d971",
+      "name": "Send Results Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2400, -400],
+      "webhookId": "8c3b2185-0fac-444a-b610-73381e8eb793",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-emailWarning",
+              "name": "emailWarning",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "field-emailWarningMessage",
+              "name": "emailWarningMessage",
+              "value": "Email skipped: no valid recipient address in payload",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8d7b2be6-68bb-4b6b-9392-67aee1d38811",
+      "name": "Record Email Warning",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [2048, 16]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({status:\"success\",results:$('Map Search Results').first().json.mappedResults,totalCount:$('Map Search Results').first().json.totalCount}) }}",
+        "options": {}
+      },
+      "id": "5542144a-f875-4847-8f12-d773b26b1e7f",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [2704, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Get Car Listings", "type": "main", "index": 0 }]]
+    },
+    "Get Car Listings": {
+      "main": [[{ "node": "Filter Listings", "type": "main", "index": 0 }]]
+    },
+    "Filter Listings": {
+      "main": [[{ "node": "Log Results", "type": "main", "index": 0 }]]
+    },
+    "Log Results": {
+      "main": [[{ "node": "Map Search Results", "type": "main", "index": 0 }]]
+    },
+    "Map Search Results": {
+      "main": [[{ "node": "Check Has Results", "type": "main", "index": 0 }]]
+    },
+    "Check Has Results": {
+      "main": [
+        [{ "node": "Validate User Email", "type": "main", "index": 0 }],
+        [{ "node": "No Results - Skip Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate User Email": {
+      "main": [
+        [{ "node": "Build Email HTML", "type": "main", "index": 0 }],
+        [{ "node": "Record Email Warning", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Email HTML": {
+      "main": [[{ "node": "Send Results Email", "type": "main", "index": 0 }]]
+    },
+    "Send Results Email": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Record Email Warning", "type": "main", "index": 0 }]
+      ]
+    },
+    "No Results - Skip Email": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "Record Email Warning": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "tags": []
+}

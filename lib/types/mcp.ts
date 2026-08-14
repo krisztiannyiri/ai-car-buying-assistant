@@ -1,5 +1,3 @@
-import type { SearchResultItem } from './n8n';
-
 export interface VehicleResult {
   id: string;
   make: string;
@@ -27,26 +25,6 @@ export interface ErrorEnvelope {
   details: string[];
 }
 
-export type McpSearchResult = NormalizedResponse | ErrorEnvelope;
-
-export function isErrorEnvelope(r: McpSearchResult): r is ErrorEnvelope {
+export function isErrorEnvelope(r: NormalizedResponse | ErrorEnvelope): r is ErrorEnvelope {
   return 'code' in r && 'message' in r && 'details' in r;
-}
-
-export function normalizeSearchResultItem(item: SearchResultItem): VehicleResult {
-  return {
-    id: `${item.make}-${item.model}-${item.year}`,
-    make: item.make,
-    model: item.model,
-    bodyType: item.bodyType,
-    year: item.year,
-    price: item.price,
-    sourceUrl: item.sourceUrl,
-    mileage: item.mileage,
-    features: item.features,
-    fuelType: item.fuelType,
-    seatCount: item.seatCount,
-    transmission: item.transmission,
-    imageUrl: item.imageUrl,
-  };
 }

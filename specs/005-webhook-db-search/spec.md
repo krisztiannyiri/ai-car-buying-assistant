@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-06
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "I want to extend the n8n workflow. I want to have a database with some mock data. When the webhook is triggered, in the next step there must be a search in the database based on the input that the webhook receives and it should log the search results."
 
